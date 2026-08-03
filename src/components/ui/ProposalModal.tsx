@@ -10,6 +10,7 @@ import {
   type GestureResponderEvent,
 } from 'react-native';
 
+import { GradientButton } from '@/components/ui/buttons/GradientButton';
 import { ANSWER, QUESTION } from '@/constants/content';
 import { DefaultTheme } from '@/constants/defaultTheme';
 import { GradientStyles } from '@/constants/gradient';
@@ -122,14 +123,15 @@ export function ProposalModal({ visible, said, onClose, onYes, onAgain }: Propos
               </Text>
 
               <View style={styles.actions}>
-                <Pressable
-                  accessibilityRole="button"
+                <GradientButton
+                  tone="light"
+                  accessibilityLabel={QUESTION.yes}
                   onPress={(event: GestureResponderEvent) =>
                     onYes(event.nativeEvent.pageX, event.nativeEvent.pageY)
                   }
-                  style={({ pressed }) => [styles.yesButton, pressed && styles.pressed]}>
+                  style={styles.yesButton}>
                   <Text style={styles.yesLabel}>{QUESTION.yes}</Text>
-                </Pressable>
+                </GradientButton>
 
                 <Pressable
                   accessibilityRole="button"
@@ -227,16 +229,8 @@ const styles = StyleSheet.create({
     marginTop: 38,
   },
   yesButton: {
-    paddingVertical: 20,
+    minHeight: 60,
     paddingHorizontal: 46,
-    borderRadius: 999,
-    backgroundColor: DefaultTheme.colors.white,
-    ...GradientStyles.label,
-    shadowColor: '#780A28',
-    shadowOpacity: 0.6,
-    shadowRadius: 40,
-    shadowOffset: { width: 0, height: 20 },
-    elevation: 8,
   },
   yesLabel: {
     fontFamily: DefaultTheme.fonts.bodyMedium,

@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, View, useWindowDimensions } from 'react-native';
 
 import { DefaultTheme } from '@/constants/defaultTheme';
@@ -13,63 +13,79 @@ const TINTS = [
 ];
 
 type Petal = {
-  key: string;
+  /** Bumped on every reseed; this is what restarts the fall. */
+  cycle: number;
   left: number;
   size: number;
   sway: number;
+  spin: number;
   duration: number;
-  delay: number;
   opacity: number;
   tint: string;
+  /** Where in its fall this petal begins — only ever non-zero on the first. */
+  start: number;
 };
 
 type Sparkle = {
-  key: string;
+  cycle: number;
   left: number;
   top: number;
   size: number;
   duration: number;
-  delay: number;
+  start: number;
 };
 
+function petalSeed(cycle: number, width: number, mid: boolean): Petal {
+  return {
+    cycle,
+    left: Math.random() * width,
+    size: 10 + Math.random() * 16,
+    sway: Math.random() * 150 - 75,
+    spin: (400 + Math.random() * 380) * (Math.random() < 0.35 ? -1 : 1),
+    duration: (9 + Math.random() * 10) * 1000,
+    opacity: 0.22 + Math.random() * 0.4,
+    tint: TINTS[Math.floor(Math.random() * TINTS.length)],
+    start: mid ? Math.random() : 0,
+  };
+}
+
+function sparkleSeed(cycle: number, width: number, height: number, mid: boolean): Sparkle {
+  return {
+    cycle,
+    left: Math.random() * width,
+    top: Math.random() * height,
+    size: 2 + Math.random() * 3,
+    duration: (2.4 + Math.random() * 4) * 1000,
+    start: mid ? Math.random() : 0,
+  };
+}
+
 /**
- * The `ambfall` + `twinkle` ambient layer: petals drifting from above the
- * viewport to below it while rotating one and a half turns, over a field of
- * sparkles that fade in and out on their own clocks.
+ * The ambient layer: petals drifting past while they turn, over a field of
+ * sparkles on their own clocks.
+ *
+ * Every petal reseeds itself the instant it leaves the bottom of the screen —
+ * new lane, size, speed, spin and drift — and starts again from above the top,
+ * so the fall never runs out and never repeats. The first generation starts
+ * part-way down so the screen is already full on the first frame instead of
+ * filling up over the opening seven seconds.
  */
 export function FallingPetals() {
   const { width, height } = useWindowDimensions();
   const reducedMotion = useReducedMotion();
   const compact = width < 640;
 
-  const petals = useMemo<Petal[]>(() => {
-    const count = compact ? 22 : 34;
-    // Stagger start times evenly across the window instead of pure random
-    // delays, which by chance can clump and leave the screen looking empty.
-    const stagger = 7000 / count;
-    return Array.from({ length: count }, (_, index) => ({
-      key: `petal-${index}`,
-      left: Math.random() * width,
-      size: 10 + Math.random() * 16,
-      sway: Math.random() * 140 - 70,
-      duration: (9 + Math.random() * 10) * 1000,
-      delay: index * stagger + Math.random() * stagger,
-      opacity: 0.22 + Math.random() * 0.4,
-      tint: TINTS[index % TINTS.length],
-    }));
-  }, [compact, width]);
+  const petalCount = compact ? 22 : 34;
+  const sparkleCount = compact ? 18 : 26;
 
-  const sparkles = useMemo<Sparkle[]>(() => {
-    const count = compact ? 18 : 26;
-    return Array.from({ length: count }, (_, index) => ({
-      key: `sparkle-${index}`,
-      left: Math.random() * width,
-      top: Math.random() * height,
-      size: 2 + Math.random() * 3,
-      duration: (2.4 + Math.random() * 4) * 1000,
-      delay: Math.random() * 6000,
-    }));
-  }, [compact, width, height]);
+  const petals = useMemo(
+    () => Array.from({ length: petalCount }, (_, index) => `petal-${index}`),
+    [petalCount],
+  );
+  const sparkles = useMemo(
+    () => Array.from({ length: sparkleCount }, (_, index) => `sparkle-${index}`),
+    [sparkleCount],
+  );
 
   if (reducedMotion) {
     return null;
@@ -77,41 +93,48 @@ export function FallingPetals() {
 
   return (
     <View pointerEvents="none" style={styles.root}>
-      {petals.map((petal) => (
-        <FallingPetal key={petal.key} petal={petal} travel={height * 1.24} />
+      {petals.map((key) => (
+        <FallingPetal key={key} width={width} travel={height * 1.24} />
       ))}
-      {sparkles.map((sparkle) => (
-        <Twinkle key={sparkle.key} sparkle={sparkle} />
+      {sparkles.map((key) => (
+        <Twinkle key={key} width={width} height={height} />
       ))}
     </View>
   );
 }
 
-function useLoopedProgress(duration: number, delay: number, easing = Easing.linear) {
-  const progress = useRef(new Animated.Value(0)).current;
-  const started = useRef(false);
+function FallingPetal({ width, travel }: { width: number; travel: number }) {
+  /* Read through refs so a window resize retunes the *next* fall instead of
+     snapping every petal on screen back to the top. */
+  const box = useRef({ width, travel });
+  box.current = { width, travel };
 
-  if (!started.current) {
-    started.current = true;
-    Animated.sequence([
-      Animated.delay(delay),
-      Animated.loop(
-        Animated.timing(progress, {
-          toValue: 1,
-          duration,
-          easing,
-          isInteraction: false,
-          useNativeDriver: true,
-        }),
-      ),
-    ]).start();
-  }
+  const [petal, setPetal] = useState<Petal>(() => petalSeed(0, width, true));
+  const progress = useRef(new Animated.Value(petal.start)).current;
 
-  return progress;
-}
+  useEffect(() => {
+    let alive = true;
+    progress.setValue(petal.start);
 
-function FallingPetal({ petal, travel }: { petal: Petal; travel: number }) {
-  const progress = useLoopedProgress(petal.duration, petal.delay);
+    const animation = Animated.timing(progress, {
+      toValue: 1,
+      duration: Math.max(600, petal.duration * (1 - petal.start)),
+      easing: Easing.linear,
+      isInteraction: false,
+      useNativeDriver: true,
+    });
+
+    animation.start(({ finished }) => {
+      if (finished && alive) {
+        setPetal((previous) => petalSeed(previous.cycle + 1, box.current.width, false));
+      }
+    });
+
+    return () => {
+      alive = false;
+      animation.stop();
+    };
+  }, [petal, progress]);
 
   return (
     <Animated.View
@@ -121,7 +144,6 @@ function FallingPetal({ petal, travel }: { petal: Petal; travel: number }) {
           left: petal.left,
           width: petal.size,
           height: petal.size,
-          opacity: petal.opacity,
           borderTopLeftRadius: petal.size * 0.52,
           borderTopRightRadius: petal.size * 0.08,
           borderBottomRightRadius: petal.size * 0.52,
@@ -129,23 +151,30 @@ function FallingPetal({ petal, travel }: { petal: Petal; travel: number }) {
           ...gradientStyle(
             `linear-gradient(106deg, ${petal.tint} 0%, ${DefaultTheme.colors.primarySoft} 100%)`,
           ),
+          // Fading in and out at the ends is what hides the seam: a petal is
+          // never visible at the moment it is recycled.
+          opacity: progress.interpolate({
+            inputRange: [0, 0.07, 0.88, 1],
+            outputRange: [0, petal.opacity, petal.opacity, 0],
+          }),
           transform: [
             {
               translateY: progress.interpolate({
                 inputRange: [0, 1],
-                outputRange: [-travel * 0.1, travel],
+                outputRange: [-travel * 0.12, travel],
               }),
             },
             {
+              // An S through the air rather than a straight diagonal.
               translateX: progress.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0, petal.sway],
+                inputRange: [0, 0.5, 1],
+                outputRange: [0, petal.sway, petal.sway * 0.34],
               }),
             },
             {
               rotate: progress.interpolate({
                 inputRange: [0, 1],
-                outputRange: ['0deg', '540deg'],
+                outputRange: ['0deg', `${petal.spin}deg`],
               }),
             },
           ],
@@ -155,8 +184,38 @@ function FallingPetal({ petal, travel }: { petal: Petal; travel: number }) {
   );
 }
 
-function Twinkle({ sparkle }: { sparkle: Sparkle }) {
-  const progress = useLoopedProgress(sparkle.duration, sparkle.delay, Easing.inOut(Easing.ease));
+function Twinkle({ width, height }: { width: number; height: number }) {
+  const box = useRef({ width, height });
+  box.current = { width, height };
+
+  const [sparkle, setSparkle] = useState<Sparkle>(() => sparkleSeed(0, width, height, true));
+  const progress = useRef(new Animated.Value(sparkle.start)).current;
+
+  useEffect(() => {
+    let alive = true;
+    progress.setValue(sparkle.start);
+
+    const animation = Animated.timing(progress, {
+      toValue: 1,
+      duration: Math.max(400, sparkle.duration * (1 - sparkle.start)),
+      easing: Easing.inOut(Easing.ease),
+      isInteraction: false,
+      useNativeDriver: true,
+    });
+
+    animation.start(({ finished }) => {
+      if (finished && alive) {
+        setSparkle((previous) =>
+          sparkleSeed(previous.cycle + 1, box.current.width, box.current.height, false),
+        );
+      }
+    });
+
+    return () => {
+      alive = false;
+      animation.stop();
+    };
+  }, [sparkle, progress]);
 
   return (
     <Animated.View

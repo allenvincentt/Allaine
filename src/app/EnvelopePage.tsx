@@ -1,17 +1,12 @@
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  Animated,
-  Easing,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Easing, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { ENVELOPE, RECIPIENT, SIGNATURE } from '@/constants/content';
+import { GradientButton } from '@/components/ui/buttons/GradientButton';
+import { Handwriting } from '@/components/ui/Handwriting';
+import { WaxSeal } from '@/components/ui/WaxSeal';
+import { ENVELOPE, RECIPIENT, SEAL_MONOGRAM, SIGNATURE } from '@/constants/content';
 import { DefaultTheme } from '@/constants/defaultTheme';
 import { GradientStyles } from '@/constants/gradient';
 import { useAudioScene } from '@/hooks/useAudioScene';
@@ -20,14 +15,14 @@ import { useResponsive } from '@/hooks/useTheme';
 
 const BACKDROP = require('@/assets/images/photo-01.jpg');
 
-/** Colours sampled from the middle of the envelope gradients — the border
- *  triangles that build the pocket and flap can only take flat fills. */
-const POCKET_COLOR = '#FFB0CA';
-const FLAP_COLOR = '#FFBCD3';
+const FRACTURE_MS = 660;
+const FLAP_DELAY = 220;
+const FLAP_MS = 1180;
+const NOTE_DELAY = 800;
+const HANDOFF = 1980;
 
-const FLAP_MS = 1150;
-const NOTE_DELAY = 560;
-const HANDOFF = 1650;
+/** Blocks the pen works through: the greeting, the body, then the signature. */
+const BLOCKS = 2 + ENVELOPE.body.length;
 
 export default function EnvelopePage() {
   const router = useRouter();
@@ -36,32 +31,69 @@ export default function EnvelopePage() {
   const { startMusic } = useAudioScene();
 
   const [opened, setOpened] = useState(false);
+  /** How many blocks of the letter the pen has finished. */
+  const [written, setWritten] = useState(0);
+  const [writing, setWriting] = useState(false);
+  const [skipped, setSkipped] = useState(false);
 
+  const fracture = useRef(new Animated.Value(0)).current;
   const flap = useRef(new Animated.Value(0)).current;
-  const seal = useRef(new Animated.Value(1)).current;
   const note = useRef(new Animated.Value(0)).current;
   const scene = useRef(new Animated.Value(1)).current;
   const letter = useRef(new Animated.Value(0)).current;
   const veil = useRef(new Animated.Value(1)).current;
   const float = useRef(new Animated.Value(0)).current;
-  const hint = useRef(new Animated.Value(0)).current;
-  const halo = useRef(new Animated.Value(0)).current;
+  const cta = useRef(new Animated.Value(0)).current;
 
-  const envelopeWidth = Math.min(width * 0.9, 540);
-  const envelopeHeight = envelopeWidth / 1.52;
+  const envelopeWidth = Math.min(width * 0.9, 520);
+  const envelopeHeight = envelopeWidth / 1.72;
+  const flapHeight = envelopeHeight * 0.53;
+  const pocketHeight = envelopeHeight * 0.62;
+  /* Big enough that the die, the rings and the monogram all read — the seal is
+     the only thing on this screen you can touch. */
+  const sealSize = clamp(64, 13, 92);
+
+  const done = written >= BLOCKS;
 
   useEffect(() => {
     if (reducedMotion) {
       return;
     }
-    const loops = [
-      loop(float, 3500),
-      loop(hint, 1300),
-      loop(halo, 2500),
-    ];
-    loops.forEach((animation) => animation.start());
-    return () => loops.forEach((animation) => animation.stop());
-  }, [float, hint, halo, reducedMotion]);
+    const drift = Animated.loop(
+      Animated.sequence([
+        Animated.timing(float, {
+          toValue: 1,
+          duration: 3600,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(float, {
+          toValue: 0,
+          duration: 3600,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    drift.start();
+    return () => drift.stop();
+  }, [float, reducedMotion]);
+
+  useEffect(() => {
+    if (!done) {
+      return;
+    }
+    const animation = Animated.timing(cta, {
+      toValue: 1,
+      duration: 620,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [done, cta]);
+
+  const advance = useCallback(() => setWritten((count) => count + 1), []);
 
   const open = useCallback(() => {
     if (opened) {
@@ -71,18 +103,23 @@ export default function EnvelopePage() {
     startMusic();
 
     Animated.parallel([
-      Animated.timing(seal, {
-        toValue: 0,
-        duration: 520,
-        easing: Easing.bezier(0.22, 1, 0.36, 1),
-        useNativeDriver: true,
-      }),
-      Animated.timing(flap, {
+      Animated.timing(fracture, {
         toValue: 1,
-        duration: FLAP_MS,
-        easing: Easing.bezier(0.6, 0.02, 0.2, 1),
+        duration: FRACTURE_MS,
+        easing: Easing.bezier(0.32, 0, 0.2, 1),
         useNativeDriver: true,
       }),
+      Animated.sequence([
+        Animated.delay(FLAP_DELAY),
+        Animated.timing(flap, {
+          toValue: 1,
+          duration: FLAP_MS,
+          // Dips slightly negative first: the flap presses down against the
+          // seal before it gives, then swings up and settles.
+          easing: Easing.bezier(0.5, -0.12, 0.22, 1),
+          useNativeDriver: true,
+        }),
+      ]),
       Animated.sequence([
         Animated.delay(NOTE_DELAY),
         Animated.timing(note, {
@@ -109,8 +146,12 @@ export default function EnvelopePage() {
           }),
         ]),
       ]),
-    ]).start();
-  }, [opened, startMusic, seal, flap, note, scene, letter]);
+    ]).start(({ finished }) => {
+      if (finished) {
+        setWriting(true);
+      }
+    });
+  }, [opened, startMusic, fracture, flap, note, scene, letter]);
 
   const enterSite = useCallback(() => {
     Animated.timing(veil, {
@@ -120,6 +161,34 @@ export default function EnvelopePage() {
       useNativeDriver: true,
     }).start(() => router.replace('/LandingPage'));
   }, [veil, router]);
+
+  /* The flap is edge-on to the camera at 90°, which is 0.52 of the way through
+     the swing — the two faces are swapped there, where the join cannot be seen. */
+  const flapMotion = useMemo(
+    () => ({
+      angle: flap.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '-172deg'] }),
+      face: flap.interpolate({
+        inputRange: [0, 0.51, 0.53, 1],
+        outputRange: [1, 1, 0, 0],
+        extrapolate: 'clamp',
+      }),
+      back: flap.interpolate({
+        inputRange: [0, 0.51, 0.53, 1],
+        outputRange: [0, 0, 1, 1],
+        extrapolate: 'clamp',
+      }),
+      // Light falls off as the paper turns away, and comes part-way back once
+      // the inner face is up.
+      shade: flap.interpolate({
+        inputRange: [0, 0.52, 1],
+        outputRange: [0, 0.4, 0.14],
+        extrapolate: 'clamp',
+      }),
+    }),
+    [flap],
+  );
+
+  const flapRadius = flapHeight * 0.9;
 
   return (
     <Animated.View style={[styles.root, { opacity: veil }]}>
@@ -138,164 +207,163 @@ export default function EnvelopePage() {
             ],
           },
         ]}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Open the letter"
-          onPress={open}
-          style={{ width: envelopeWidth }}>
-          <Animated.View
+        <Animated.View
+          style={[
+            styles.envelope,
+            {
+              width: envelopeWidth,
+              height: envelopeHeight,
+              transform: [
+                { perspective: 1600 },
+                // A few degrees of lean is what separates an object sitting on
+                // a surface from a rectangle painted on one.
+                { rotateX: '8deg' },
+                { translateY: float.interpolate({ inputRange: [0, 1], outputRange: [0, -12] }) },
+              ],
+            },
+          ]}>
+          {/* contact shadow */}
+          <View
             pointerEvents="none"
             style={[
-              styles.halo,
+              styles.ground,
+              GradientStyles.envelopeGround,
               {
-                width: envelopeWidth * 1.5,
-                height: envelopeHeight * 1.5,
-                borderRadius: envelopeWidth,
-                left: -envelopeWidth * 0.25,
-                top: -envelopeHeight * 0.25,
-                opacity: halo.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0.95] }),
-                transform: [
-                  { scale: halo.interpolate({ inputRange: [0, 1], outputRange: [1, 1.06] }) },
-                ],
+                left: envelopeWidth * 0.03,
+                right: envelopeWidth * 0.03,
+                bottom: -envelopeHeight * 0.14,
+                height: envelopeHeight * 0.32,
               },
             ]}
           />
 
+          {/* back panel */}
+          <View pointerEvents="none" style={[styles.shell, GradientStyles.envelopeShell]} />
+
+          {/* the lining, on show only once the flap is up */}
+          <View
+            pointerEvents="none"
+            style={[styles.lining, GradientStyles.envelopeLining, { height: flapHeight * 1.06 }]}
+          />
+
+          {/* the note, tucked inside until the flap lifts */}
           <Animated.View
+            pointerEvents="none"
             style={[
-              styles.envelope,
+              styles.note,
+              GradientStyles.paper,
               {
-                width: envelopeWidth,
-                height: envelopeHeight,
                 transform: [
                   {
-                    translateY: float.interpolate({
+                    translateY: note.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0, -14],
+                      outputRange: [0, -envelopeHeight * 0.6],
+                    }),
+                  },
+                  { scale: note.interpolate({ inputRange: [0, 1], outputRange: [1, 1.04] }) },
+                  {
+                    rotate: note.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: ['0deg', '-1.2deg'],
                     }),
                   },
                 ],
               },
             ]}>
-            {/* back panel */}
-            <View style={[styles.envelopeBack, { borderRadius: 12 }]} />
-
-            {/* the note, tucked inside until the flap lifts */}
-            <Animated.View
-              style={[
-                styles.note,
-                {
-                  transform: [
-                    {
-                      translateY: note.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [0, -envelopeHeight * 0.58],
-                      }),
-                    },
-                    { scale: note.interpolate({ inputRange: [0, 1], outputRange: [1, 1.04] }) },
-                  ],
-                },
-              ]}>
-              <Text style={[styles.noteName, { fontSize: clamp(20, 4.6, 30) }]}>{RECIPIENT}</Text>
-            </Animated.View>
-
-            {/* front pocket: two slopes meeting in the middle, plus the base */}
-            <View pointerEvents="none" style={styles.pocket}>
-              <View
-                style={[
-                  styles.slopeLeft,
-                  {
-                    borderBottomWidth: envelopeHeight * 0.47,
-                    borderRightWidth: envelopeWidth / 2,
-                  },
-                ]}
-              />
-              <View
-                style={[
-                  styles.slopeRight,
-                  {
-                    borderBottomWidth: envelopeHeight * 0.47,
-                    borderLeftWidth: envelopeWidth / 2,
-                  },
-                ]}
-              />
-              <View style={[styles.pocketBase, { top: envelopeHeight * 0.47 }]} />
-            </View>
-
-            {/* the flap */}
-            <Animated.View
-              style={[
-                styles.flapWrap,
-                {
-                  zIndex: opened ? 1 : 5,
-                  transform: [
-                    { perspective: 1500 },
-                    {
-                      rotateX: flap.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: ['0deg', '-178deg'],
-                      }),
-                    },
-                  ],
-                },
-              ]}>
-              <View
-                style={[
-                  styles.flap,
-                  {
-                    borderTopWidth: envelopeHeight * 0.47,
-                    borderLeftWidth: envelopeWidth / 2,
-                    borderRightWidth: envelopeWidth / 2,
-                  },
-                ]}
-              />
-            </Animated.View>
-
-            {/* wax seal */}
-            <Animated.View
-              style={[
-                styles.seal,
-                {
-                  width: clamp(52, 11, 68),
-                  height: clamp(52, 11, 68),
-                  borderRadius: clamp(52, 11, 68) / 2,
-                  top: envelopeHeight * 0.47 - clamp(52, 11, 68) / 2,
-                  marginLeft: -clamp(52, 11, 68) / 2,
-                  opacity: seal,
-                  transform: [
-                    { scale: seal.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1] }) },
-                    {
-                      rotate: seal.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: ['-18deg', '0deg'],
-                      }),
-                    },
-                  ],
-                },
-              ]}>
-              <Text style={[styles.sealLetter, { fontSize: clamp(22, 4.6, 28) }]}>
-                {RECIPIENT.charAt(0)}
-              </Text>
-            </Animated.View>
+            <View style={styles.noteRule} />
+            <Text style={[styles.noteName, { fontSize: clamp(20, 4.6, 30) }]}>{RECIPIENT}</Text>
           </Animated.View>
 
-          <View style={styles.caption}>
-            <Text style={styles.captionEyebrow}>{ENVELOPE.eyebrow}</Text>
-            <Animated.Text
+          {/* the shadow the front pocket throws up the back panel */}
+          <View
+            pointerEvents="none"
+            style={[
+              styles.pocketShade,
+              GradientStyles.envelopeSeam,
+              { bottom: pocketHeight - 1, height: envelopeHeight * 0.13 },
+            ]}
+          />
+
+          {/* front pocket */}
+          <View pointerEvents="none" style={[styles.pocket, { height: pocketHeight }]}>
+            <View style={[StyleSheet.absoluteFill, GradientStyles.envelopePocket]} />
+            <View style={[StyleSheet.absoluteFill, GradientStyles.envelopeSheen]} />
+            <View style={styles.pocketLip} />
+          </View>
+
+          {/* the flap */}
+          <Animated.View
+            style={[
+              styles.flapWrap,
+              {
+                height: flapHeight,
+                zIndex: opened ? 1 : 5,
+                transform: [{ perspective: 1400 }, { rotateX: flapMotion.angle }],
+              },
+            ]}>
+            <Animated.View
               style={[
-                styles.captionHint,
+                styles.flapFace,
+                GradientStyles.envelopeFlapFace,
                 {
-                  fontSize: clamp(18, 3.4, 24),
-                  opacity: hint.interpolate({ inputRange: [0, 1], outputRange: [0.75, 1] }),
-                  transform: [
-                    { translateY: hint.interpolate({ inputRange: [0, 1], outputRange: [0, 9] }) },
-                  ],
+                  borderBottomLeftRadius: flapRadius,
+                  borderBottomRightRadius: flapRadius,
+                  opacity: flapMotion.face,
                 },
               ]}>
-              {ENVELOPE.hint} ↓
-            </Animated.Text>
+              <View
+                style={[
+                  StyleSheet.absoluteFill,
+                  GradientStyles.envelopeSheen,
+                  { borderBottomLeftRadius: flapRadius, borderBottomRightRadius: flapRadius },
+                ]}
+              />
+              <View style={styles.flapLip} />
+            </Animated.View>
+
+            <Animated.View
+              style={[
+                styles.flapFace,
+                GradientStyles.envelopeFlapBack,
+                {
+                  borderBottomLeftRadius: flapRadius,
+                  borderBottomRightRadius: flapRadius,
+                  opacity: flapMotion.back,
+                  transform: [{ rotateX: '180deg' }],
+                },
+              ]}
+            />
+
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                styles.flapShade,
+                {
+                  borderBottomLeftRadius: flapRadius,
+                  borderBottomRightRadius: flapRadius,
+                  opacity: flapMotion.shade,
+                },
+              ]}
+            />
+          </Animated.View>
+
+          {/* the wax */}
+          <View
+            style={[
+              styles.sealSlot,
+              { top: flapHeight - sealSize / 2, marginLeft: -sealSize / 2 },
+            ]}>
+            <WaxSeal
+              size={sealSize}
+              monogram={SEAL_MONOGRAM}
+              fracture={fracture}
+              onPress={open}
+              disabled={opened}
+              glow={!opened}
+              accessibilityLabel="Break the seal and open the letter"
+            />
           </View>
-        </Pressable>
+        </Animated.View>
       </Animated.View>
 
       {/* the letter itself */}
@@ -316,47 +384,74 @@ export default function EnvelopePage() {
           showsVerticalScrollIndicator={false}>
           <View style={styles.rule} />
 
-          <Text style={[styles.greeting, { fontSize: clamp(24, 4.4, 34) }]}>
-            {ENVELOPE.greeting}
-          </Text>
-
-          {ENVELOPE.body.map((paragraph) => (
-            <Text key={paragraph} style={[styles.paragraph, { fontSize: clamp(17, 2.5, 21) }]}>
-              {paragraph}
-            </Text>
-          ))}
-
-          <Text style={styles.signOff}>{ENVELOPE.signOff}</Text>
-          <Text style={[styles.signature, { fontSize: clamp(28, 5, 38) }]}>{SIGNATURE}</Text>
-
+          {/* Tapping the page puts the rest of the ink down at once. */}
           <Pressable
             accessibilityRole="button"
-            onPress={enterSite}
-            style={({ pressed }) => [styles.cta, pressed && styles.ctaPressed]}>
-            <Text style={styles.ctaLabel}>{ENVELOPE.cta}</Text>
+            accessibilityLabel="Finish writing the letter"
+            disabled={done}
+            onPress={() => setSkipped(true)}>
+            <Handwriting
+              text={ENVELOPE.greeting}
+              active={writing}
+              skip={skipped}
+              onDone={advance}
+              speed={330}
+              style={[
+                styles.greeting,
+                {
+                  fontSize: clamp(26, 4.6, 36),
+                  lineHeight: clamp(26, 4.6, 36) * 1.24,
+                },
+              ]}
+            />
+
+            {ENVELOPE.body.map((paragraph, index) => (
+              <Handwriting
+                key={paragraph}
+                text={paragraph}
+                active={writing && written > index}
+                skip={skipped}
+                onDone={advance}
+                speed={700}
+                delay={index === 0 ? 240 : 0}
+                containerStyle={styles.paragraph}
+                style={[styles.paragraphText, { fontSize: clamp(17, 2.5, 21), lineHeight: 32 }]}
+              />
+            ))}
+
+            <Text style={styles.signOff}>{ENVELOPE.signOff}</Text>
+
+            <Handwriting
+              text={SIGNATURE}
+              active={writing && written > ENVELOPE.body.length}
+              skip={skipped}
+              onDone={advance}
+              speed={200}
+              style={[
+                styles.signature,
+                { fontSize: clamp(28, 5, 38), lineHeight: clamp(28, 5, 38) * 1.3 },
+              ]}
+            />
           </Pressable>
+
+          <Animated.View
+            pointerEvents={done ? 'auto' : 'none'}
+            style={{
+              opacity: cta,
+              transform: [
+                { translateY: cta.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) },
+              ],
+            }}>
+            <GradientButton
+              onPress={enterSite}
+              style={styles.cta}
+              accessibilityLabel={ENVELOPE.cta}>
+              <Text style={styles.ctaLabel}>{ENVELOPE.cta}</Text>
+            </GradientButton>
+          </Animated.View>
         </ScrollView>
       </Animated.View>
     </Animated.View>
-  );
-}
-
-function loop(value: Animated.Value, duration: number) {
-  return Animated.loop(
-    Animated.sequence([
-      Animated.timing(value, {
-        toValue: 1,
-        duration,
-        easing: Easing.inOut(Easing.ease),
-        useNativeDriver: true,
-      }),
-      Animated.timing(value, {
-        toValue: 0,
-        duration,
-        easing: Easing.inOut(Easing.ease),
-        useNativeDriver: true,
-      }),
-    ]),
   );
 }
 
@@ -376,131 +471,130 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  halo: {
-    position: 'absolute',
-    ...GradientStyles.halo,
-  },
   envelope: {
     alignSelf: 'center',
   },
-  envelopeBack: {
+
+  /* ——— the envelope, back to front ——— */
+  ground: {
+    position: 'absolute',
+    borderRadius: 999,
+  },
+  shell: {
     ...StyleSheet.absoluteFill,
-    ...GradientStyles.envelope,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
     backgroundColor: '#FFC6D9',
-    shadowColor: '#96193C',
-    shadowOpacity: 0.55,
-    shadowRadius: 50,
-    shadowOffset: { width: 0, height: 34 },
-    elevation: 12,
+    shadowColor: '#7A1132',
+    shadowOpacity: 0.34,
+    shadowRadius: 30,
+    shadowOffset: { width: 0, height: 20 },
+    elevation: 10,
+  },
+  lining: {
+    position: 'absolute',
+    top: 1,
+    left: 1,
+    right: 1,
+    zIndex: 1,
+    borderTopLeftRadius: 15,
+    borderTopRightRadius: 15,
+    backgroundColor: '#E58AAD',
   },
   note: {
     position: 'absolute',
-    left: '5%',
-    right: '5%',
-    bottom: '6%',
-    height: '88%',
+    left: '6%',
+    right: '6%',
+    bottom: '7%',
+    height: '86%',
     zIndex: 2,
     borderRadius: 6,
     alignItems: 'center',
-    paddingTop: '5%',
+    paddingTop: '6%',
     backgroundColor: DefaultTheme.colors.surface,
-    ...GradientStyles.paper,
     shadowColor: '#781432',
-    shadowOpacity: 0.35,
-    shadowRadius: 18,
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
     shadowOffset: { width: 0, height: 6 },
+  },
+  noteRule: {
+    width: 30,
+    height: 1,
+    marginBottom: 10,
+    backgroundColor: '#F0C3D3',
   },
   noteName: {
     fontFamily: DefaultTheme.fonts.script,
     color: '#E7A2BC',
   },
-  pocket: {
-    ...StyleSheet.absoluteFill,
+  pocketShade: {
+    position: 'absolute',
+    left: 1,
+    right: 1,
     zIndex: 3,
-    borderRadius: 12,
-    overflow: 'hidden',
   },
-  slopeLeft: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    width: 0,
-    height: 0,
-    backgroundColor: 'transparent',
-    borderStyle: 'solid',
-    borderBottomColor: POCKET_COLOR,
-    borderRightColor: 'transparent',
-  },
-  slopeRight: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    width: 0,
-    height: 0,
-    backgroundColor: 'transparent',
-    borderStyle: 'solid',
-    borderBottomColor: POCKET_COLOR,
-    borderLeftColor: 'transparent',
-  },
-  pocketBase: {
+  pocket: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: POCKET_COLOR,
+    zIndex: 4,
+    overflow: 'hidden',
+    borderTopLeftRadius: 10,
+    borderTopRightRadius: 10,
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
+    backgroundColor: '#FFC3D9',
+    shadowColor: '#7A1132',
+    shadowOpacity: 0.22,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: -3 },
+  },
+  /** The folded top edge of the pocket, catching the light. */
+  pocketLip: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 1.5,
+    backgroundColor: 'rgba(255, 255, 255, 0.72)',
   },
   flapWrap: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    alignItems: 'center',
     transformOrigin: 'top',
   },
-  flap: {
-    width: 0,
-    height: 0,
-    backgroundColor: 'transparent',
-    borderStyle: 'solid',
-    borderTopColor: FLAP_COLOR,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
+  flapFace: {
+    ...StyleSheet.absoluteFill,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#FFC3D8',
   },
-  seal: {
+  flapLip: {
+    position: 'absolute',
+    top: 0,
+    left: 14,
+    right: 14,
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.6)',
+  },
+  flapShade: {
+    ...StyleSheet.absoluteFill,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    backgroundColor: '#5A1128',
+  },
+  sealSlot: {
     position: 'absolute',
     left: '50%',
     zIndex: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...GradientStyles.seal,
-    backgroundColor: DefaultTheme.colors.primaryDeep,
-    shadowColor: '#780A28',
-    shadowOpacity: 0.8,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 10,
   },
-  sealLetter: {
-    fontFamily: DefaultTheme.fonts.displayRegular,
-    color: 'rgba(255, 255, 255, 0.92)',
-  },
-  caption: {
-    alignItems: 'center',
-    marginTop: 36,
-  },
-  captionEyebrow: {
-    fontFamily: DefaultTheme.fonts.bodyMedium,
-    fontSize: 12,
-    letterSpacing: 3.4,
-    textTransform: 'uppercase',
-    color: DefaultTheme.colors.label,
-  },
-  captionHint: {
-    marginTop: 10,
-    fontFamily: DefaultTheme.fonts.displayItalic,
-    fontStyle: 'italic',
-    color: '#7A1132',
-  },
+
+  /* ——— the letter ——— */
   letterWrap: {
     ...StyleSheet.absoluteFill,
     alignItems: 'center',
@@ -517,10 +611,10 @@ const styles = StyleSheet.create({
     borderColor: DefaultTheme.colors.hairline,
     backgroundColor: DefaultTheme.colors.surface,
     shadowColor: '#96193C',
-    shadowOpacity: 0.6,
-    shadowRadius: 60,
-    shadowOffset: { width: 0, height: 40 },
-    elevation: 16,
+    shadowOpacity: 0.42,
+    shadowRadius: 44,
+    shadowOffset: { width: 0, height: 26 },
+    elevation: 14,
   },
   letterCard: {
     ...GradientStyles.paper,
@@ -534,18 +628,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#E7A2BC',
   },
   greeting: {
-    marginBottom: 22,
     fontFamily: DefaultTheme.fonts.displayRegular,
     color: DefaultTheme.colors.ink,
   },
   paragraph: {
-    marginBottom: 18,
+    marginTop: 20,
+  },
+  paragraphText: {
     fontFamily: DefaultTheme.fonts.display,
-    lineHeight: 32,
     color: DefaultTheme.colors.inkSoft,
   },
   signOff: {
-    marginTop: 8,
+    marginTop: 30,
     marginBottom: 6,
     fontFamily: DefaultTheme.fonts.body,
     fontSize: 12,
@@ -559,20 +653,7 @@ const styles = StyleSheet.create({
   },
   cta: {
     marginTop: 34,
-    paddingVertical: 17,
-    borderRadius: 999,
-    alignItems: 'center',
-    ...GradientStyles.base,
-    backgroundColor: DefaultTheme.colors.primary,
-    shadowColor: DefaultTheme.colors.primary,
-    shadowOpacity: 0.95,
-    shadowRadius: 40,
-    shadowOffset: { width: 0, height: 18 },
-    elevation: 8,
-  },
-  ctaPressed: {
-    opacity: 0.9,
-    transform: [{ scale: 0.97 }],
+    alignSelf: 'stretch',
   },
   ctaLabel: {
     fontFamily: DefaultTheme.fonts.bodyMedium,

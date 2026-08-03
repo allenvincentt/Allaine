@@ -7,9 +7,10 @@ import type { ImageSourcePropType } from 'react-native';
 export const SIGNATURE = 'Your Name';
 export const RECIPIENT = 'Elle';
 
+/** The letter pressed into the wax. */
+export const SEAL_MONOGRAM = 'A';
+
 export const ENVELOPE = {
-  eyebrow: 'A letter is waiting',
-  hint: 'tap to open',
   greeting: `${RECIPIENT},`,
   body: [
     'There is something I have been carrying around for a while now — something a little too big for a text message, and far too important to say badly.',

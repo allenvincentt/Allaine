@@ -2,7 +2,6 @@ import { forwardRef, useRef, type ReactNode } from "react";
 import {
     Animated,
     Easing,
-    Platform,
     Pressable,
     StyleSheet,
     View,
@@ -12,9 +11,11 @@ import {
 } from "react-native";
 
 import { DefaultTheme } from "@/constants/defaultTheme";
-import { Gradient } from "@/constants/gradient";
+import { Gradient, gradientStyle } from "@/constants/gradient";
 
 export type GradientButtonVariant = "pill" | "fab";
+/** The rose ramp, or the white one for buttons sitting on rose. */
+export type GradientButtonTone = "primary" | "light";
 
 export const GradientButtonFabSize = 56;
 
@@ -23,18 +24,31 @@ type GradientButtonProps = {
   onPress?: (event: GestureResponderEvent) => void;
   disabled?: boolean;
   variant?: GradientButtonVariant;
+  tone?: GradientButtonTone;
   style?: StyleProp<ViewStyle>;
   accessibilityLabel?: string;
 };
 
-const webGradientBase: ViewStyle & { backgroundImage: string } = {
-  backgroundImage: Gradient.base,
-};
-const webGradientHover: ViewStyle & { backgroundImage: string } = {
-  backgroundImage: Gradient.hover,
-};
-const webGradientPressed: ViewStyle & { backgroundImage: string } = {
-  backgroundImage: Gradient.pressed,
+/**
+ * `gradientStyle` writes both the native and the web property, so each ramp is
+ * built once here rather than branching on platform at every layer.
+ */
+const TONES: Record<
+  GradientButtonTone,
+  { base: ViewStyle; hover: ViewStyle; pressed: ViewStyle; shadowColor: string }
+> = {
+  primary: {
+    base: gradientStyle(Gradient.base),
+    hover: gradientStyle(Gradient.hover),
+    pressed: gradientStyle(Gradient.pressed),
+    shadowColor: "#8E0F35",
+  },
+  light: {
+    base: gradientStyle(Gradient.label),
+    hover: gradientStyle(Gradient.labelHover),
+    pressed: gradientStyle(Gradient.labelPressed),
+    shadowColor: "#780A28",
+  },
 };
 
 export const GradientButton = forwardRef<View, GradientButtonProps>(
@@ -44,12 +58,15 @@ export const GradientButton = forwardRef<View, GradientButtonProps>(
       onPress,
       disabled = false,
       variant = "pill",
+      tone = "primary",
       style,
       accessibilityLabel,
     },
     ref,
   ) {
     const fab = variant === "fab";
+    const ramp = TONES[tone];
+
     const scale = useRef(new Animated.Value(1)).current;
     const hoverProgress = useRef(new Animated.Value(0)).current;
     const pressProgress = useRef(new Animated.Value(0)).current;
@@ -67,11 +84,13 @@ export const GradientButton = forwardRef<View, GradientButtonProps>(
       }).start();
     };
 
+    /* Compress on the way down, spring back on release — the give is what
+       makes it feel like a button rather than a rectangle that changed colour. */
     const collapse = () => {
       Animated.timing(scale, {
-        toValue: 0.9,
-        duration: 100,
-        easing: Easing.out(Easing.cubic),
+        toValue: 0.96,
+        duration: 90,
+        easing: Easing.out(Easing.quad),
         useNativeDriver: false,
       }).start();
     };
@@ -79,15 +98,25 @@ export const GradientButton = forwardRef<View, GradientButtonProps>(
     const expand = () => {
       Animated.spring(scale, {
         toValue: 1,
-        friction: 4,
-        tension: 260,
+        friction: 5,
+        tension: 300,
         useNativeDriver: false,
       }).start();
     };
 
     const lift = hoverProgress.interpolate({
       inputRange: [0, 1],
-      outputRange: [0, -4],
+      outputRange: [0, -3],
+    });
+
+    /* Slight at rest, and only deep enough on hover to sell the lift. */
+    const shadowOpacity = hoverProgress.interpolate({
+      inputRange: [0, 1],
+      outputRange: fab ? [0.14, 0.2] : [0.1, 0.16],
+    });
+    const shadowRadius = hoverProgress.interpolate({
+      inputRange: [0, 1],
+      outputRange: fab ? [12, 16] : [9, 13],
     });
 
     return (
@@ -97,32 +126,23 @@ export const GradientButton = forwardRef<View, GradientButtonProps>(
           fab && styles.rootFab,
           style,
           disabled && styles.rootDisabled,
-          { transform: [{ translateY: lift }, { scale }] },
+          {
+            shadowColor: ramp.shadowColor,
+            shadowOpacity,
+            shadowRadius,
+            transform: [{ translateY: lift }, { scale }],
+          },
         ]}
       >
         <View style={styles.clip}>
-          <View
+          <View pointerEvents="none" style={[styles.layer, ramp.base]} />
+          <Animated.View
             pointerEvents="none"
-            style={[
-              styles.gradientBase,
-              Platform.OS === "web" && webGradientBase,
-            ]}
+            style={[styles.layer, ramp.hover, { opacity: hoverProgress }]}
           />
           <Animated.View
             pointerEvents="none"
-            style={[
-              styles.gradientHover,
-              Platform.OS === "web" && webGradientHover,
-              { opacity: hoverProgress },
-            ]}
-          />
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              styles.gradientPressed,
-              Platform.OS === "web" && webGradientPressed,
-              { opacity: pressProgress },
-            ]}
+            style={[styles.layer, ramp.pressed, { opacity: pressProgress }]}
           />
         </View>
         <View pointerEvents="none" style={styles.content}>
@@ -171,11 +191,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#2C2C24",
-    shadowOpacity: 0.22,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 11 },
-    elevation: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
   },
   rootFab: {
     position: "absolute",
@@ -185,10 +202,8 @@ const styles = StyleSheet.create({
     height: GradientButtonFabSize,
     minHeight: GradientButtonFabSize,
     paddingHorizontal: 0,
-    shadowOpacity: 0.3,
-    shadowRadius: 22,
-    shadowOffset: { width: 0, height: 12 },
-    elevation: 9,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 3,
     zIndex: 20,
   },
   rootDisabled: {
@@ -199,17 +214,8 @@ const styles = StyleSheet.create({
     borderRadius: DefaultTheme.radius.pill,
     overflow: "hidden",
   },
-  gradientBase: {
+  layer: {
     ...StyleSheet.absoluteFill,
-    experimental_backgroundImage: Gradient.base,
-  },
-  gradientHover: {
-    ...StyleSheet.absoluteFill,
-    experimental_backgroundImage: Gradient.hover,
-  },
-  gradientPressed: {
-    ...StyleSheet.absoluteFill,
-    experimental_backgroundImage: Gradient.pressed,
   },
   content: {
     flexDirection: "row",
@@ -220,5 +226,6 @@ const styles = StyleSheet.create({
   pressable: {
     ...StyleSheet.absoluteFill,
     outlineWidth: 0,
+    cursor: "pointer",
   },
 });

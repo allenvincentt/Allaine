@@ -16,13 +16,16 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { GradientButton } from '@/components/ui/buttons/GradientButton';
 import { CursorHeartGlow } from '@/components/ui/CursorHeartGlow';
 import { FallingPetals } from '@/components/ui/FallingPetals';
 import { FlipCard } from '@/components/ui/FlipCard';
 import { GlassPill } from '@/components/ui/GlassPill';
 import { GlassSurface } from '@/components/ui/GlassSurface';
+import { Handwriting } from '@/components/ui/Handwriting';
 import { HeartConfetti, type HeartConfettiHandle } from '@/components/ui/HeartConfetti';
 import { JogWheel } from '@/components/ui/JogWheel';
+import { ParchmentScroll } from '@/components/ui/ParchmentScroll';
 import {
   LilyBloomAnimation,
   type LilyBloomAnimationHandle,
@@ -50,13 +53,18 @@ import {
   TIMELINE_SECTION,
 } from '@/constants/content';
 import { DefaultTheme } from '@/constants/defaultTheme';
-import { GradientStyles } from '@/constants/gradient';
+import { gradientStyle, GradientStyles } from '@/constants/gradient';
 import { useAudioScene } from '@/hooks/useAudioScene';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { useResponsive } from '@/hooks/useTheme';
 
 const MIN_CARD = 230;
 const CARD_GAP = 18;
+
+/** The bloom behind the hero heart, brightest on each thump. */
+const HEART_GLOW = gradientStyle(
+  'radial-gradient(circle, rgba(255,124,164,0.9) 0%, rgba(255,96,140,0.4) 34%, rgba(226,44,86,0.14) 56%, rgba(226,44,86,0) 72%)',
+);
 
 export default function LandingPage() {
   const { clamp, width, height, isCompact } = useResponsive();
@@ -81,6 +89,13 @@ export default function LandingPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [said, setSaid] = useState(false);
   const [cinematic, setCinematic] = useState(false);
+
+  /* The scroll stays wound up until it is opened; the pen then works through
+     the paragraphs one at a time, or all at once if the page is tapped. */
+  const [letterOpen, setLetterOpen] = useState(false);
+  const [letterWritten, setLetterWritten] = useState(0);
+  const [letterSkipped, setLetterSkipped] = useState(false);
+  const advanceLetter = useCallback(() => setLetterWritten((count) => count + 1), []);
 
   const pagePadding = clamp(20, 5, 64);
 
@@ -248,13 +263,16 @@ export default function LandingPage() {
               </Reveal>
 
               <Reveal delay={120}>
-                <Text
-                  style={[
-                    styles.heroTitle,
-                    { fontSize: clamp(56, 14, 150), lineHeight: clamp(56, 14, 150) * 1.06 },
-                  ]}>
-                  {HERO.titleLead} <ShimmerName name={HERO.titleName} /> <Beat>❤️</Beat>
-                </Text>
+                <View style={styles.heroTitleRow}>
+                  <Text
+                    style={[
+                      styles.heroTitle,
+                      { fontSize: clamp(56, 14, 150), lineHeight: clamp(56, 14, 150) * 1.06 },
+                    ]}>
+                    {HERO.titleLead} <ShimmerName name={HERO.titleName} />
+                  </Text>
+                  <HeartPulse size={clamp(56, 14, 150) * 0.56} />
+                </View>
               </Reveal>
 
               <Reveal delay={240}>
@@ -264,12 +282,12 @@ export default function LandingPage() {
               </Reveal>
 
               <Reveal delay={360} style={styles.heroActions}>
-                <Pressable
-                  accessibilityRole="button"
+                <GradientButton
                   onPress={scrollToLetter}
-                  style={({ pressed }) => [styles.heroCta, pressed && styles.pressed]}>
+                  accessibilityLabel={HERO.cta}
+                  style={styles.heroCta}>
                   <Text style={styles.heroCtaLabel}>{HERO.cta}</Text>
-                </Pressable>
+                </GradientButton>
               </Reveal>
             </Pressable>
 
@@ -288,40 +306,63 @@ export default function LandingPage() {
               { paddingHorizontal: pagePadding, paddingVertical: clamp(70, 10, 140) },
             ]}>
             <Reveal>
-              <GlassSurface
-                radius={28}
-                intensity={38}
-                gradient="glassBright"
-                tintColor="rgba(255, 255, 255, 0.44)"
-                style={styles.letterCard}
-                contentStyle={{ padding: clamp(28, 6, 64) }}>
-                <Text style={styles.eyebrow}>{LETTER.eyebrow}</Text>
-                <Text style={[styles.sectionTitle, { fontSize: clamp(34, 6.4, 62) }]}>
-                  {LETTER.title}
-                </Text>
-
-                {LETTER.body.map((paragraph) => (
-                  <Text
-                    key={paragraph}
-                    style={[styles.letterParagraph, { fontSize: clamp(18, 2.5, 23) }]}>
-                    {paragraph}
+              <View style={styles.scrollHolder}>
+                <ParchmentScroll
+                  onOpen={() => setLetterOpen(true)}
+                  contentStyle={{ padding: clamp(28, 6, 64) }}>
+                  <Text style={styles.eyebrow}>{LETTER.eyebrow}</Text>
+                  <Text style={[styles.sectionTitle, { fontSize: clamp(34, 6.4, 62) }]}>
+                    {LETTER.title}
                   </Text>
-                ))}
 
-                <Text style={[styles.letterClosing, { fontSize: clamp(20, 2.9, 27) }]}>
-                  {LETTER.closing}
-                </Text>
+                  {/* Tapping the sheet puts the rest of the ink down at once. */}
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Finish writing the letter"
+                    disabled={!letterOpen}
+                    onPress={() => setLetterSkipped(true)}>
+                    {LETTER.body.map((paragraph, index) => (
+                      <Handwriting
+                        key={paragraph}
+                        text={paragraph}
+                        active={letterOpen && letterWritten >= index}
+                        skip={letterSkipped}
+                        onDone={advanceLetter}
+                        speed={700}
+                        delay={index === 0 ? 260 : 0}
+                        containerStyle={styles.letterParagraph}
+                        style={[
+                          styles.letterParagraphText,
+                          { fontSize: clamp(18, 2.5, 23), lineHeight: 34 },
+                        ]}
+                      />
+                    ))}
 
-                <View style={styles.signatureRow}>
-                  <View>
-                    <Text style={styles.eyebrow}>{LETTER.signOffLabel}</Text>
-                    <Text style={[styles.signature, { fontSize: clamp(30, 5, 42) }]}>
-                      {SIGNATURE}
-                    </Text>
+                    <Handwriting
+                      text={LETTER.closing}
+                      active={letterOpen && letterWritten >= LETTER.body.length}
+                      skip={letterSkipped}
+                      onDone={advanceLetter}
+                      speed={520}
+                      containerStyle={styles.letterClosing}
+                      style={[
+                        styles.letterClosingText,
+                        { fontSize: clamp(20, 2.9, 27), lineHeight: 38 },
+                      ]}
+                    />
+                  </Pressable>
+
+                  <View style={styles.signatureRow}>
+                    <View>
+                      <Text style={styles.eyebrow}>{LETTER.signOffLabel}</Text>
+                      <Text style={[styles.signature, { fontSize: clamp(30, 5, 42) }]}>
+                        {SIGNATURE}
+                      </Text>
+                    </View>
+                    <Beat style={styles.letterSeal}>💌</Beat>
                   </View>
-                  <Beat style={styles.letterSeal}>💌</Beat>
-                </View>
-              </GlassSurface>
+                </ParchmentScroll>
+              </View>
             </Reveal>
           </RevealSection>
 
@@ -599,6 +640,84 @@ function Beat({ children, style }: { children: ReactNode; style?: StyleProp<Text
   );
 }
 
+/**
+ * The hero heart. A real heartbeat is two thumps and a rest, not a sine wave —
+ * a hard systolic squeeze, a smaller second one on the rebound, then most of
+ * the cycle spent still. The glow behind it blooms on each thump and holds low
+ * through the rest, which is what stops it reading as a blinking light.
+ */
+function HeartPulse({ size }: { size: number }) {
+  const reducedMotion = useReducedMotion();
+  const beat = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (reducedMotion) {
+      return;
+    }
+    const animation = Animated.loop(
+      Animated.timing(beat, {
+        toValue: 1,
+        duration: 1500,
+        // Linear, because the shape of the beat lives in the keyframes below.
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }),
+    );
+    animation.start();
+    return () => animation.stop();
+  }, [beat, reducedMotion]);
+
+  /* Wide enough for the glow to fall off inside its own box, which also
+     supplies the space that used to be the literal space before the emoji. */
+  const box = size * 1.9;
+
+  return (
+    <View style={[styles.heartSlot, { width: box, height: box }]}>
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.heartGlow,
+          HEART_GLOW,
+          {
+            width: box,
+            height: box,
+            borderRadius: box / 2,
+            opacity: beat.interpolate({
+              inputRange: [0, 0.07, 0.2, 0.34, 0.52, 1],
+              outputRange: [0.32, 0.74, 0.46, 0.82, 0.32, 0.32],
+            }),
+            transform: [
+              {
+                scale: beat.interpolate({
+                  inputRange: [0, 0.09, 0.24, 0.36, 0.6, 1],
+                  outputRange: [0.86, 1.06, 0.94, 1.1, 0.86, 0.86],
+                }),
+              },
+            ],
+          },
+        ]}
+      />
+      <Animated.Text
+        style={[
+          styles.heartGlyph,
+          { fontSize: size, lineHeight: size * 1.2 },
+          {
+            transform: [
+              {
+                scale: beat.interpolate({
+                  inputRange: [0, 0.07, 0.15, 0.24, 0.36, 0.52, 1],
+                  outputRange: [1, 1.16, 1.04, 1.22, 1, 1, 1],
+                }),
+              },
+            ],
+          },
+        ]}>
+        ❤️
+      </Animated.Text>
+    </View>
+  );
+}
+
 function Bob({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
   const reducedMotion = useReducedMotion();
   const bob = useLoop(1400, !reducedMotion);
@@ -699,10 +818,29 @@ const styles = StyleSheet.create({
     color: '#A83258',
     textAlign: 'center',
   },
-  heroTitle: {
+  heroTitleRow: {
     marginTop: 28,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroTitle: {
+    // Lets the title wrap inside the row on a narrow screen instead of
+    // shouldering the heart off the edge.
+    flexShrink: 1,
     fontFamily: DefaultTheme.fonts.display,
     color: DefaultTheme.colors.ink,
+    textAlign: 'center',
+  },
+  heartSlot: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heartGlow: {
+    position: 'absolute',
+  },
+  heartGlyph: {
     textAlign: 'center',
   },
   heroName: {
@@ -722,16 +860,7 @@ const styles = StyleSheet.create({
     marginTop: 38,
   },
   heroCta: {
-    paddingVertical: 16,
-    paddingHorizontal: 30,
-    borderRadius: 999,
-    ...GradientStyles.base,
-    backgroundColor: DefaultTheme.colors.primary,
-    shadowColor: DefaultTheme.colors.primary,
-    shadowOpacity: 0.9,
-    shadowRadius: 40,
-    shadowOffset: { width: 0, height: 18 },
-    elevation: 8,
+    paddingHorizontal: 34,
   },
   heroCtaLabel: {
     fontFamily: DefaultTheme.fonts.bodyMedium,
@@ -744,10 +873,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 30,
     alignSelf: 'center',
-  },
-  pressed: {
-    opacity: 0.9,
-    transform: [{ scale: 0.97 }],
   },
 
   /* shared section furniture */
@@ -794,27 +919,24 @@ const styles = StyleSheet.create({
   },
 
   /* letter */
-  letterCard: {
+  scrollHolder: {
     width: '100%',
     maxWidth: 820,
     alignSelf: 'center',
-    shadowColor: '#96193C',
-    shadowOpacity: 0.4,
-    shadowRadius: 50,
-    shadowOffset: { width: 0, height: 28 },
-    elevation: 8,
   },
   letterParagraph: {
     marginTop: 20,
+  },
+  letterParagraphText: {
     fontFamily: DefaultTheme.fonts.display,
-    lineHeight: 34,
     color: DefaultTheme.colors.inkSoft,
   },
   letterClosing: {
     marginTop: 24,
+  },
+  letterClosingText: {
     fontFamily: DefaultTheme.fonts.displayItalicRegular,
     fontStyle: 'italic',
-    lineHeight: 38,
     color: DefaultTheme.colors.primaryDark,
   },
   signatureRow: {

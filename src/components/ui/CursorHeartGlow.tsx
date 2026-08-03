@@ -1,14 +1,26 @@
 import { useEffect, useRef } from 'react';
-import { Animated, Easing, Platform, StyleSheet, Text } from 'react-native';
+import { Animated, Platform, StyleSheet, Text } from 'react-native';
 
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 
 const GLOW_SIZE = 140;
-const FOLLOW_DURATION = 160;
+
+/**
+ * How much of the remaining distance the glow closes each frame. High enough
+ * that it reads as stuck to the cursor — it is within a pixel or two after
+ * about four frames — while still rounding off the corners of a fast flick.
+ */
+const FOLLOW = 0.45;
 
 /**
  * A soft white heart that trails the pointer, web-only since it needs a
  * persistent cursor (touch has none, and native has no `window`/`document`).
+ *
+ * Driven off a rAF loop that eases towards the last known pointer position
+ * rather than off a tween per event: a tween restarted on every `pointermove`
+ * spends its whole life in the slow part of its own curve, which is what left
+ * the glow lagging behind the cursor. The loop parks itself once it has caught
+ * up, so an idle pointer costs nothing.
  */
 export function CursorHeartGlow() {
   const reducedMotion = useReducedMotion();
@@ -20,26 +32,73 @@ export function CursorHeartGlow() {
       return;
     }
 
-    const handleMove = (event: PointerEvent) => {
-      Animated.timing(position, {
-        toValue: { x: event.clientX - GLOW_SIZE / 2, y: event.clientY - GLOW_SIZE / 2 },
-        duration: FOLLOW_DURATION,
-        easing: Easing.out(Easing.quad),
-        useNativeDriver: true,
-      }).start();
+    const target = { x: -GLOW_SIZE, y: -GLOW_SIZE };
+    const current = { x: -GLOW_SIZE, y: -GLOW_SIZE };
+    let frame: number | null = null;
+    let placed = false;
+    let shown = false;
+
+    const step = () => {
+      const dx = target.x - current.x;
+      const dy = target.y - current.y;
+
+      if (Math.abs(dx) < 0.05 && Math.abs(dy) < 0.05) {
+        current.x = target.x;
+        current.y = target.y;
+        position.x.setValue(current.x);
+        position.y.setValue(current.y);
+        frame = null;
+        return;
+      }
+
+      current.x += dx * FOLLOW;
+      current.y += dy * FOLLOW;
+      position.x.setValue(current.x);
+      position.y.setValue(current.y);
+      frame = requestAnimationFrame(step);
+    };
+
+    const wake = () => {
+      if (frame === null) {
+        frame = requestAnimationFrame(step);
+      }
+    };
+
+    const fade = (toValue: number) => {
       Animated.timing(opacity, {
-        toValue: 1,
-        duration: 220,
+        toValue,
+        duration: toValue === 1 ? 200 : 280,
         useNativeDriver: true,
       }).start();
     };
 
+    const handleMove = (event: PointerEvent) => {
+      target.x = event.clientX - GLOW_SIZE / 2;
+      target.y = event.clientY - GLOW_SIZE / 2;
+
+      if (!placed) {
+        // First sighting: appear under the cursor rather than flying in from
+        // the corner it was parked in.
+        placed = true;
+        current.x = target.x;
+        current.y = target.y;
+        position.x.setValue(current.x);
+        position.y.setValue(current.y);
+      }
+
+      wake();
+
+      if (!shown) {
+        shown = true;
+        fade(1);
+      }
+    };
+
     const handleHidden = () => {
-      Animated.timing(opacity, {
-        toValue: 0,
-        duration: 280,
-        useNativeDriver: true,
-      }).start();
+      if (shown) {
+        shown = false;
+        fade(0);
+      }
     };
 
     window.addEventListener('pointermove', handleMove);
@@ -50,6 +109,9 @@ export function CursorHeartGlow() {
       window.removeEventListener('pointermove', handleMove);
       document.removeEventListener('mouseleave', handleHidden);
       window.removeEventListener('blur', handleHidden);
+      if (frame !== null) {
+        cancelAnimationFrame(frame);
+      }
     };
   }, [position, opacity, reducedMotion]);
 
