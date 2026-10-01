@@ -69,13 +69,6 @@ export type Photo = {
   source: ImageSourcePropType;
 };
 
-/**
- * The line written under each month of the carousel.
- *
- * Matched to a frame by month rather than by position — see `CAPTIONS` in
- * `PhotoMarquee` — so a month with no entry here is shown without a line rather
- * than shifting everything after it. Add the entry when you file the frame.
- */
 export const PHOTOS: Photo[] = [
   {
     id: "elle-photo-1",
@@ -132,13 +125,6 @@ export const TIMELINE_SECTION = {
   title: "The days I keep re-reading",
 } as const;
 
-/**
- * One page of the journal.
- *
- * `caption` is the pencil line under the print and `note` the one written
- * across the bottom of the page afterwards — both are part of the diary
- * conceit, so give every entry one rather than leaving them off.
- */
 export type TimelineEntry = {
   tag: string;
   title: string;
@@ -149,11 +135,6 @@ export type TimelineEntry = {
   highlight?: boolean;
 };
 
-/**
- * The photograph pinned to each page of the journal. One file per entry, named
- * after the day it belongs to — the `require` has to be a literal, so they are
- * spelled out here and handed to the entry rather than looked up by title.
- */
 const TIMELINE_PHOTOS = {
   whoWouldveThought: require("@/assets/timeline/WhoWouldveThought.jpg"),
   yourBirthday: require("@/assets/timeline/YourBirthday.png"),
@@ -216,7 +197,6 @@ export type Reason = {
   title: string;
   body: string;
   highlight?: boolean;
-  /** Shown on the front of the card, and only while the pointer is on it. */
   image?: ImageSourcePropType;
 };
 
@@ -273,7 +253,6 @@ export const REASONS: Reason[] = [
 ];
 
 export const SONG = {
-  /** The whole section, in one line. There is nothing else on it. */
   line: "The one song that always reminds me of you.",
   idle: "Press play for our song",
   playing: "Playing our song…",

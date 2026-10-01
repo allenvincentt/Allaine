@@ -40,27 +40,17 @@ const Z = {
   seal: 6,
 } as const;
 
-/* ——— the letter in the pocket, in numbers ———
- * All in points off the envelope's own box rather than percentages: it is
- * drawn inside the throat's clip, whose frame is not the envelope's, so a
- * percentage here would resolve against the wrong thing. */
 const NOTE_WIDTH = 0.86;
 const NOTE_HEIGHT = 0.84;
-/** Where the sheet sits while it is still down in the envelope. */
 const NOTE_REST = 0.1;
-/** How far it is drawn up out of the throat. */
 const NOTE_TRAVEL = 0.68;
 
-/** The flap's shadow, in layers: how far each is dropped, and how dark it is.
- *  Three flat copies of the silhouette rather than one, because there is no
- *  blur here — a soft shadow has to be built out of steps. */
 const FLAP_SHADOW = [
   { drop: 0.008, alpha: 0.2 },
   { drop: 0.019, alpha: 0.12 },
   { drop: 0.032, alpha: 0.06 },
 ] as const;
 
-/** Blocks the pen works through: the greeting, the body, then the signature. */
 const BLOCKS = 2 + ENVELOPE.body.length;
 
 export default function EnvelopePage() {
@@ -70,11 +60,9 @@ export default function EnvelopePage() {
   const { startMusic } = useAudioScene();
 
   const [opened, setOpened] = useState(false);
-  /** How many blocks of the letter the pen has finished. */
   const [written, setWritten] = useState(0);
   const [writing, setWriting] = useState(false);
   const [skipped, setSkipped] = useState(false);
-  /** Whether the flap has turned past edge-on and is now behind the envelope. */
   const [flapTurned, setFlapTurned] = useState(false);
 
   const fracture = useRef(new Animated.Value(0)).current;
@@ -88,16 +76,12 @@ export default function EnvelopePage() {
 
   const envelopeWidth = Math.min(width * 0.82, 620, height * 0.6);
   const envelopeHeight = envelopeWidth * ENVELOPE_RATIO;
-  /** How far the flap's point stands off the top edge. */
   const flapHeight = envelopeHeight * FLAP_RATIO;
   const sealSize = Math.max(52, envelopeWidth * SEAL_RATIO);
 
   const noteWidth = envelopeWidth * NOTE_WIDTH;
   const noteHeight = envelopeHeight * NOTE_HEIGHT;
 
-  /* `flapArc` multiplies the bow by the span itself — handing it a bow that
-     has already been scaled squares the sagitta, which sends the arc's centre
-     to the wrong side of the chord and clips the whole flap away. */
   const arc = useMemo(
     () => flapArc(envelopeWidth, flapHeight, FLAP_BOW),
     [envelopeWidth, flapHeight],
@@ -129,10 +113,6 @@ export default function EnvelopePage() {
     return () => drift.stop();
   }, [float, reducedMotion]);
 
-  /* The flap starts lying on the front of the envelope and ends up behind it,
-     so somewhere in the swing it has to change places with the letter. The
-     only place that can happen unseen is the frame where the flap is edge-on
-     and has no width to it, which is exactly where the two faces already swap. */
   useEffect(() => {
     const id = flap.addListener(({ value }) => setFlapTurned(value > FLAP_EDGE_ON));
     return () => flap.removeListener(id);
@@ -171,17 +151,11 @@ export default function EnvelopePage() {
       Animated.sequence([
         Animated.delay(FLAP_DELAY),
         Animated.timing(flap, {
-          // Carried a little past level, so the sheet has somewhere to fall
-          // back from — a flap that stops dead on its mark reads as a hinge.
           toValue: FLAP_OVERSHOOT,
           duration: FLAP_MS,
-          // Dips slightly negative first: the flap presses down against the
-          // seal before it gives, then swings up.
           easing: Easing.bezier(0.5, -0.12, 0.22, 1),
           useNativeDriver: true,
         }),
-        // …and the paper settles onto its own weight. Left underdamped: one
-        // clear fall and a much smaller second one, then still.
         Animated.spring(flap, {
           toValue: 1,
           damping: 11,
@@ -235,11 +209,6 @@ export default function EnvelopePage() {
     }).start(() => router.replace('/LandingPage'));
   }, [veil, router]);
 
-  /* The flap is edge-on to the camera at 90°, which is 0.52 of the way through
-     the swing — the two faces are swapped there, where the join cannot be seen.
-     Only the angle is left free to extrapolate, so the settle at the end of the
-     swing carries past -168° and comes back; everything else is clamped, and
-     cannot be dragged out of range by it. */
   const flapMotion = useMemo(
     () => ({
       angle: flap.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '-168deg'] }),
@@ -253,14 +222,11 @@ export default function EnvelopePage() {
         outputRange: [0, 0, 1, 1],
         extrapolate: 'clamp',
       }),
-      // Light falls off as the sheet turns away, and comes part-way back once
-      // the inner face is up.
       shade: flap.interpolate({
         inputRange: [0, 0.52, 1],
         outputRange: [0, 0.42, 0.15],
         extrapolate: 'clamp',
       }),
-      /** A flap that has lifted is no longer lying on the body to shade it. */
       cast: flap.interpolate({
         inputRange: [0, 0.16],
         outputRange: [1, 0],
@@ -270,10 +236,6 @@ export default function EnvelopePage() {
     [flap],
   );
 
-  /**
-   * What the breaking wax does to the sheet it was stuck to: the point is
-   * pulled down against the seal, gives all at once, and rebounds.
-   */
   const sealTug = useMemo(
     () =>
       fracture.interpolate({
@@ -307,17 +269,12 @@ export default function EnvelopePage() {
             {
               width: envelopeWidth,
               height: envelopeHeight,
-              // Square on to the camera: what lifts the envelope off the
-              // backdrop is the shadow underneath it, not a lean. The
-              // perspective is kept for the flap, which does turn.
               transform: [
                 { perspective: 1600 },
                 { translateY: float.interpolate({ inputRange: [0, 1], outputRange: [0, -10] }) },
               ],
             },
           ]}>
-          {/* The shadow it floats in — a wide ambient pool, and a tighter core
-              directly beneath where the sheet is closest to the surface. */}
           <View
             pointerEvents="none"
             style={[
@@ -345,7 +302,6 @@ export default function EnvelopePage() {
             ]}
           />
 
-          {/* the body */}
           <View pointerEvents="none" style={[styles.shell, GradientStyles.envelopeShell]}>
             <View style={[StyleSheet.absoluteFill, GradientStyles.envelopeGrainLight]} />
             <View style={[StyleSheet.absoluteFill, GradientStyles.envelopeGrainDark]} />
@@ -354,24 +310,12 @@ export default function EnvelopePage() {
             <View style={[StyleSheet.absoluteFill, GradientStyles.envelopeEdge]} />
           </View>
 
-          {/* The inside of the envelope, on show only once the flap is up —
-              and cut to exactly the shape the flap vacates. A plain rectangle
-              here would show as two dark wedges either side of the flap, since
-              there is nothing in front of it any more to hide them. */}
           <View pointerEvents="none" style={styles.liningSlot}>
             <FlapSilhouette span={envelopeWidth} reach={flapHeight} arc={arc}>
               <View style={[StyleSheet.absoluteFill, GradientStyles.envelopeLining]} />
             </FlapSilhouette>
           </View>
 
-          {/* ——— the letter, in the pocket ———
-              Laid over the lining, so it is a sheet sitting *in* the envelope
-              rather than behind it, and cut to the throat plus everything above
-              it. That clip is the whole thing: while the sheet is down in the
-              envelope only the part framed by the opening shows, and the front
-              panel covers the rest; as it rises, it clears the top edge and
-              comes fully into view. It never passes in front of the body and
-              never appears from behind it. */}
           <View pointerEvents="none" style={styles.noteSlot}>
             <FlapSilhouette
               span={envelopeWidth}
@@ -410,9 +354,6 @@ export default function EnvelopePage() {
             </FlapSilhouette>
           </View>
 
-          {/* The shadow the flap lays on the body: the same silhouette, dropped
-              a little, so all that survives of each copy is a band along the
-              two cut edges. */}
           <Animated.View
             pointerEvents="none"
             style={[styles.flapShadowSlot, { height: envelopeHeight, opacity: flapMotion.cast }]}>
@@ -430,14 +371,11 @@ export default function EnvelopePage() {
             ))}
           </Animated.View>
 
-          {/* ——— the flap ——— */}
           <Animated.View
             style={[
               styles.flapSlot,
               {
                 height: flapHeight,
-                // Once it is past edge-on it is behind the envelope, and so
-                // behind the letter coming out of it.
                 zIndex: flapTurned ? Z.flapBehind : Z.flapFront,
                 transform: [
                   { perspective: 1400 },
@@ -472,7 +410,6 @@ export default function EnvelopePage() {
             </FlapSilhouette>
           </Animated.View>
 
-          {/* the wax */}
           <View
             style={[styles.sealSlot, { top: flapHeight - sealSize / 2, marginLeft: -sealSize / 2 }]}>
             <WaxSeal
@@ -489,7 +426,6 @@ export default function EnvelopePage() {
         </Animated.View>
       </Animated.View>
 
-      {/* the letter itself */}
       <Animated.View
         pointerEvents={opened ? 'auto' : 'none'}
         style={[
@@ -501,18 +437,10 @@ export default function EnvelopePage() {
             ],
           },
         ]}>
-        {/* The scroller is the *viewport*, not the letter — the letter is a
-            plain card inside it. A ScrollView clips, and while the card was the
-            scroller that clip fell exactly on the card's own edge, which is the
-            one place the quill is supposed to be allowed to hang over. Moved
-            out here, the clip lands on the window instead and the pen can lie
-            across the edge of the paper. */}
         <ScrollView
           style={styles.letterViewport}
           contentContainerStyle={styles.letterViewportContent}
           showsVerticalScrollIndicator={false}>
-          {/* A little more paper under the button than beside it — a stretched
-              button reads as tight against an edge it is actually clear of. */}
           <View
             style={[
               styles.letterCard,
@@ -520,7 +448,6 @@ export default function EnvelopePage() {
             ]}>
           <View style={styles.rule} />
 
-          {/* Tapping the page puts the rest of the ink down at once. */}
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Finish writing the letter"
@@ -592,38 +519,19 @@ export default function EnvelopePage() {
   );
 }
 
-/* ————————————————— the flap ————————————————— */
 
 type FlapArc = {
   radius: number;
-  /** Centre of the *left* edge's circle, in the flap's own frame. */
   cx: number;
   cy: number;
-  /** How far the arc stands off its chord at the middle, in px. */
   sagitta: number;
 };
 
-/**
- * The circle whose boundary is the flap's left cut edge.
- *
- * Given the chord — the flap's top corner to its point — and how far the edge
- * bows off it, there is exactly one such circle: its radius follows from the
- * sagitta relation, and its centre sits on the chord's perpendicular bisector
- * on the *inside* of the flap. That last part is the whole trick. It means the
- * flap's side of a curved edge is simply the inside of a circle, and a circle
- * is a shape this platform can clip to, which nothing else about a bowed
- * triangle is.
- *
- * The circle comes out enormous — a two per cent bow belongs to an arc several
- * times the width of the envelope — and that is fine. It is a transparent
- * clip; nothing is ever painted at that size.
- */
 function flapArc(span: number, reach: number, bow: number): FlapArc {
   const half = span / 2;
   const chord = Math.hypot(half, reach);
   const sagitta = span * bow;
   const radius = (chord * chord) / (8 * sagitta) + sagitta / 2;
-  /* Out from the chord's midpoint, along its normal, into the flap. */
   const offset = radius - sagitta;
 
   return {
@@ -638,42 +546,13 @@ type FlapSilhouetteProps = {
   span: number;
   reach: number;
   arc: FlapArc;
-  /** Shift the whole shape down, for the shadow copies. */
   drop?: number;
-  /**
-   * Stop cutting this far above the hinge.
-   *
-   * The silhouette itself is untouched — the two arcs still decide where the
-   * throat's edges run. All this does is stop the *box* from trimming the
-   * region above the envelope's top edge, which turns the clip from "the
-   * throat" into "the throat, and everything out in the open above it". That
-   * is the shape the letter has to be cut to: framed by the opening while it
-   * is still down in the envelope, and whole once it has cleared the top.
-   */
   rise?: number;
-  /** Whether to shade the two cut edges. Off for the shadow copies. */
   edges?: boolean;
-  /** Painted across the flap's full width, in its own frame. */
   children: ReactNode;
-  /** Painted over everything, cut edges included — the turning flap's shade. */
   overlay?: ReactNode;
 };
 
-/**
- * The flap, cut to its two curved edges.
- *
- * Both cuts are made at once, by nesting. The flap's side of the left edge is
- * the inside of one circle, the right edge's is the inside of its mirror, and
- * the outer box trims the hinge line — so the shape is three nested clips and
- * a single fill.
- *
- * Nesting rather than drawing the two halves side by side is the whole point.
- * Two halves have to meet down the centre, and there is no good answer for the
- * join: butt them and sub-pixel rounding opens a hairline, overlap them and
- * every translucent coat is composited twice in the overlap. Either way you
- * get a line down the middle of the flap, which is exactly where the eye is.
- * One fill in one clip cannot have a seam.
- */
 function FlapSilhouette({
   span,
   reach,
@@ -685,7 +564,6 @@ function FlapSilhouette({
   overlay,
 }: FlapSilhouetteProps) {
   const { radius, cx, cy } = arc;
-  /* The right edge's circle is the left one's mirror image. */
   const mirrored = span - cx;
   const circle = {
     position: 'absolute' as const,
@@ -704,15 +582,10 @@ function FlapSilhouette({
         top: drop - rise,
         width: span,
         height: reach + rise,
-        // The flap's top corners are the envelope's top corners, so they have
-        // to be cut the same way or two square nubs stand proud of the body.
-        // Nothing to round once the box reaches past them, though.
         borderTopLeftRadius: rise ? 0 : BODY_RADIUS - 1,
         borderTopRightRadius: rise ? 0 : BODY_RADIUS - 1,
         overflow: 'hidden',
       }}>
-      {/* `rise` moves the box's own origin up, so the arcs are pushed back
-          down by the same amount and stay where the flap's frame puts them. */}
       <View style={[circle, { left: cx - radius, top: cy - radius + rise }]}>
         <View style={[circle, { left: mirrored - cx, top: 0 }]}>
           <View
@@ -726,10 +599,6 @@ function FlapSilhouette({
             {children}
             {edges ? (
               <>
-                {/* The score first, then the cut over the top of it: the fold
-                    is inside the flap and the guillotined edge is its border,
-                    so they have to stack in that order or the crease paints
-                    over the very edge it is supposed to run parallel to. */}
                 <FlapFold span={span} reach={reach} side="left" sagitta={arc.sagitta} />
                 <FlapFold span={span} reach={reach} side="right" sagitta={arc.sagitta} />
                 <FlapEdge span={span} reach={reach} side="left" sagitta={arc.sagitta} />
@@ -744,22 +613,6 @@ function FlapSilhouette({
   );
 }
 
-/**
- * The diagonal fold down one side of the flap — the score the die left when
- * the blank was cut, and the line that tells you at a glance which part of
- * this rectangle is going to open.
- *
- * Laid along the chord and turned onto it exactly as `FlapEdge` is, then set a
- * little way *inside* it, so it runs the full length of the edge and stays
- * clear of the shading along the cut. Because the cut itself bows away from
- * the chord and the crease does not, the gap between them widens towards the
- * middle of the edge and closes at the corner and the point — which is both
- * what a scored fold does against a die-cut edge and, more to the point, what
- * stops the two lines reading as one thick one.
- *
- * Two hairlines, because that is all a fold is: the paper tents up on one side
- * of the score and dives on the other.
- */
 function FlapFold({
   span,
   reach,
@@ -802,12 +655,6 @@ function FlapFold({
   );
 }
 
-/**
- * The shading along one cut edge, laid out along the chord and then turned
- * onto it. Its dark end is set a sagitta *past* the chord, so wherever the arc
- * happens to run it is the arc, not the strip, that decides where the shading
- * stops — and the darkest tone always lands exactly on the edge.
- */
 function FlapEdge({
   span,
   reach,
@@ -867,7 +714,6 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
 
-  /* ——— the envelope, back to front ——— */
   ground: {
     position: 'absolute',
     borderRadius: 999,
@@ -877,8 +723,6 @@ const styles = StyleSheet.create({
     zIndex: Z.shell,
     borderRadius: BODY_RADIUS,
     borderWidth: 1,
-    // Barely there. A guillotined card catches a thread of light on its cut
-    // edge; anything brighter draws the rectangle instead of the envelope.
     borderColor: 'rgba(255, 224, 218, 0.14)',
     overflow: 'hidden',
     backgroundColor: '#A32E33',
@@ -892,14 +736,10 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFill,
     zIndex: Z.lining,
   },
-  /** The throat's clip. Above the lining, below the front panel. */
   noteSlot: {
     ...StyleSheet.absoluteFill,
     zIndex: Z.note,
   },
-  /** Sized in points by the caller — it is drawn inside a clip whose frame is
-   *  not the envelope's, so a percentage here would resolve against the wrong
-   *  box. */
   note: {
     position: 'absolute',
     borderRadius: 3,
@@ -929,7 +769,6 @@ const styles = StyleSheet.create({
     right: 0,
     zIndex: Z.flapShadow,
   },
-  /** `zIndex` is set by the caller: it turns over mid-swing. */
   flapSlot: {
     position: 'absolute',
     top: 0,
@@ -945,21 +784,17 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
   },
-  /** The strip a fold is drawn in: the two hairlines at the foot of it, and a
-   *  breath of shading running back into the flap to seat them in the paper. */
   flapFold: {
     position: 'absolute',
     left: 0,
     right: 0,
   },
-  /** The flap's side of the score, standing into the light. */
   flapFoldRidge: {
     position: 'absolute',
     left: 0,
     right: 0,
     backgroundColor: 'rgba(255, 233, 226, 0.42)',
   },
-  /** …and the bottom of it, which the light does not reach at all. */
   flapFoldValley: {
     position: 'absolute',
     left: 0,
@@ -974,29 +809,20 @@ const styles = StyleSheet.create({
     zIndex: Z.seal,
   },
 
-  /* ——— the letter ——— */
   letterWrap: {
     ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 20,
   },
-  /** The window the letter scrolls in. Runs the full width it is given, so
-   *  what it trims is the edge of the screen rather than the edge of the page. */
   letterViewport: {
-    // The wrap's own padding is the margin off the screen; holding the window
-    // back another 14% on top of that only moved the clip further up the card.
     width: '100%',
     maxHeight: '100%',
     flexGrow: 0,
   },
   letterViewportContent: {
-    // Definite, or the container is shrink-to-fit and the card's own `width:
-    // '100%'` has nothing to resolve against — it collapses to whatever the
-    // text happens to measure instead of reaching its 660 cap.
     width: '100%',
     alignItems: 'center',
-    // room for the card's own shadow, which is no longer the scroller's border
     paddingVertical: 16,
   },
   letterCard: {

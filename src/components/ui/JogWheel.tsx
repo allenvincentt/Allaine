@@ -16,7 +16,6 @@ import { GradientStyles } from '@/constants/gradient';
 import { useResponsive } from '@/hooks/useTheme';
 
 const TURNS = 2000;
-/** Milliseconds per revolution. Fast enough that the turn reads at a glance. */
 const PERIOD = 2600;
 const GROOVES = 7;
 
@@ -100,9 +99,6 @@ export function JogWheel({ playing, onPress, label, size: given, captionStyle }:
     outputRange: ['0deg', `${TURNS * 360}deg`],
   });
 
-  /* The record's own furniture is sized off the record, so it can be asked for
-     at any diameter without the rim, the marker and the label drifting out of
-     proportion with it. */
   const rim = Math.max(4, size * 0.033);
   const iconSize = size * 0.14;
 
@@ -157,8 +153,6 @@ export function JogWheel({ playing, onPress, label, size: given, captionStyle }:
             );
           })}
 
-          {/* Concentric grooves say nothing about which way round the record is,
-              so a few radial marks give the spin something to be read against. */}
           {MARKERS.map(({ angle, opacity }) => (
             <View
               key={angle}
@@ -186,8 +180,6 @@ export function JogWheel({ playing, onPress, label, size: given, captionStyle }:
                 {
                   fontSize: iconSize,
                   lineHeight: iconSize * 1.16,
-                  // The play glyph carries its own left-hand bearing; nudging it
-                  // over is what puts the triangle's mass on the label's centre.
                   marginLeft: playing ? 0 : iconSize * 0.06,
                 },
               ]}>
@@ -203,7 +195,6 @@ export function JogWheel({ playing, onPress, label, size: given, captionStyle }:
 }
 
 const styles = StyleSheet.create({
-  /** `gap` is set by the caller — it scales with the record. */
   root: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -213,7 +204,6 @@ const styles = StyleSheet.create({
     top: 0,
     ...GradientStyles.haloSoft,
   },
-  /** `borderWidth` is the rim, and is set by the caller for the same reason. */
   disc: {
     alignItems: 'center',
     justifyContent: 'center',

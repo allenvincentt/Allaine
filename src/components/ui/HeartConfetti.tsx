@@ -19,7 +19,6 @@ import {
 
 const COLORS = ['#FF7FB0', '#E22C56', '#FFB3CE', '#FFD9A8', '#FFFFFF', '#B3123A'];
 
-/** Fewer bodies on device than in a desktop browser. */
 const DENSITY = Platform.OS === 'web' ? 1 : 0.6;
 
 type Kind = 'heart' | 'strip' | 'petal';

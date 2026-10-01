@@ -14,7 +14,6 @@ import { DefaultTheme } from "@/constants/defaultTheme";
 import { Gradient, gradientStyle } from "@/constants/gradient";
 
 export type GradientButtonVariant = "pill" | "fab";
-/** The rose ramp, or the white one for buttons sitting on rose. */
 export type GradientButtonTone = "primary" | "light";
 
 export const GradientButtonFabSize = 56;

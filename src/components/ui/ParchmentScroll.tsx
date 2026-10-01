@@ -460,11 +460,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderRadius: 3,
   },
-  /** Lifted once the sheet is flat and the clip has nothing left to reveal. */
   unclipped: {
     overflow: 'visible',
   },
-  /** The grain's own clip, which is never lifted. */
   grain: {
     ...StyleSheet.absoluteFill,
     overflow: 'hidden',
@@ -520,7 +518,6 @@ const styles = StyleSheet.create({
     right: 0,
     height: 26,
   },
-  /** A hairline of light just inside the cut edge — the deckle catching it. */
   deckle: {
     ...StyleSheet.absoluteFill,
     borderRadius: 3,

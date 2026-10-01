@@ -1140,18 +1140,9 @@ export default function LandingPage() {
         )}
         sampleOffset={sampleOffset}
         dim={cinematic ? 1 : 0}
-        /* Nearly full even by day. The clip is blended with `screen` and then
-           washed and vignetted on the way out, so what reaches the reader is
-           already a fraction of this — holding it back another fifth here was
-           most of why the bloom was hard to see at all. */
         opacity={cinematic ? 1 : 0.96}
       />
 
-      {/* Atmosphere, not chrome — deliberately outside the `ui` fade and never
-          unmounted, so a cinematic toggle cannot pause, hide or restart it and
-          the drift carries straight on mid-fall. Its own zIndex 3 puts it above
-          the scroller, which is what keeps it visible once the page underneath
-          has faded away. Do not fold this into the fade. */}
       <FallingPetals />
 
       <Animated.ScrollView
@@ -1159,8 +1150,6 @@ export default function LandingPage() {
         style={[styles.scroll, { opacity: ui }]}
         contentContainerStyle={[
           styles.content,
-          // Enough to keep the last line clear of the floating pills and no
-          // more. The 120 this used to be was clearance for the footer.
           { paddingBottom: 32 + insets.bottom },
         ]}
         onScroll={onScroll}
@@ -1169,17 +1158,9 @@ export default function LandingPage() {
         onMomentumScrollEnd={armLock}
         onContentSizeChange={onContentSizeChange}
         onLayout={onScrollViewLayout}
-        // Every event on the web, where the hold has to answer each pixel
-        // before it is painted; once per frame on a phone, where the native
-        // position locks subscribe to the same throttled stream this governs
-        // — starving them was the stage and the journal shaking against the
-        // scroll. See `SCROLL_THROTTLE`.
         scrollEventThrottle={SCROLL_THROTTLE}
         showsVerticalScrollIndicator={false}
       >
-        {/* One provider for the whole scroller: it tells a section when it has
-            arrived, and hands the scroll offset itself to the few blocks —
-            the stacked timeline — that animate against it directly. */}
         <ScrollRevealProvider
           value={reveal.value}
           anchors={anchors.value}
@@ -1631,20 +1612,6 @@ function InviteCard({ onPress }: { onPress: () => void }) {
   );
 }
 
-/**
- * The centrepiece: the heartbeat, and nothing around it.
- *
- * There used to be two hairline rings here with a mote travelling round each of
- * them. They were drawn to give the middle of the page something quietly in
- * motion — and the middle of the page turned out to be the one place the hero
- * has nothing it needs to say, because it is where the bloom is. Two circles
- * and two orbits laid over the flower is exactly the obstruction the corners
- * were pulled apart to avoid, so they are gone and the beat is on its own.
- *
- * The box stays the size it was. It is empty now, but it is what holds the
- * middle band open between the two corner bands, and the heart is centred in
- * it exactly as it was centred in the rings.
- */
 function HeroHeart({ size, live }: { size: number; live: boolean }) {
   return (
     <View style={[styles.heroHeart, { width: size, height: size }]}>
@@ -1653,18 +1620,6 @@ function HeroHeart({ size, live }: { size: number; live: boolean }) {
   );
 }
 
-/**
- * "For Elle", drawn rather than typed.
- *
- * Two blocks rather than one, because the lead and the name are set in
- * different faces and only a single face can be handed to a glyph at a time.
- * `indexOffset` carries the stagger across the join — the name picks the count
- * up where the lead left it, so one line appears to run through both.
- *
- * Both blocks are anchored left: the headline holds a corner of the hero now
- * rather than sitting in the middle of it, and a wrapped line that centred
- * itself would break that edge.
- */
 function HeroTitle({ size, live }: { size: number; live: boolean }) {
   const revealed = useRevealed();
 
@@ -1685,8 +1640,6 @@ function HeroTitle({ size, live }: { size: number; live: boolean }) {
         style={styles.tracedLeft}
       />
 
-      {/* The word space. It cannot live inside either block — it belongs to
-          neither face, and a traced glyph has no trailing advance. */}
       <View style={{ width: size * 0.24 }} />
 
       <ShimmerName
@@ -1694,7 +1647,6 @@ function HeroTitle({ size, live }: { size: number; live: boolean }) {
         size={size}
         active={revealed}
         live={live}
-        // +1 for the space, so the count does not stall on it.
         indexOffset={HERO.titleLead.length + 1}
         style={styles.tracedLeft}
       />
@@ -1702,59 +1654,40 @@ function HeroTitle({ size, live }: { size: number; live: boolean }) {
   );
 }
 
-/**
- * The hero heart.
- *
- * Lub, dub, rest — but eased rather than cut. Each leg of the beat is a sine
- * in and out, so the glyph is never doing anything abruptly, and the cycle
- * both begins and ends at rest, which is what lets it repeat without a seam.
- * The glow behind it rides the same value, blooming on the squeeze and sitting
- * low through the rest, which is what stops it reading as a blinking light.
- */
 function HeartPulse({ size, live }: { size: number; live: boolean }) {
   const reducedMotion = useReducedMotion();
   const beat = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    /* The beat is two layers — a glyph and a radial bloom behind it — moving
-       against each other forever. Native-driven, so it never touches
-       JavaScript, but it does hand the compositor a pair of full-time animated
-       layers to keep redrawing behind everything the reader has scrolled on
-       to. It stops when the hero does, like the headline. See `heroLive`. */
     if (reducedMotion || !live) {
       return;
     }
     const animation = Animated.loop(
       Animated.sequence([
-        // the squeeze…
         Animated.timing(beat, {
           toValue: 1,
           duration: 400,
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
-        // …most of the way back…
         Animated.timing(beat, {
           toValue: 0.34,
           duration: 280,
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
-        // …the smaller second thump on the rebound…
         Animated.timing(beat, {
           toValue: 0.78,
           duration: 320,
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
-        // …and down to still.
         Animated.timing(beat, {
           toValue: 0,
           duration: 640,
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
-        // The rest, which is most of a heartbeat and all of why it reads as one.
         Animated.delay(760),
       ]),
     );
@@ -1762,8 +1695,6 @@ function HeartPulse({ size, live }: { size: number; live: boolean }) {
     return () => animation.stop();
   }, [beat, reducedMotion, live]);
 
-  /* Wide enough for the glow to fall off inside its own box, which also
-     supplies the space that used to be the literal space before the emoji. */
   const box = size * 1.9;
 
   return (
@@ -1810,31 +1741,7 @@ function HeartPulse({ size, live }: { size: number; live: boolean }) {
   );
 }
 
-/**
- * The heart itself — drawn, rather than an emoji.
- *
- * `❤️` is not one picture: it is whatever glyph the reader's platform happens
- * to ship. A desktop browser renders the glossy, gradient-lit one the design
- * was composed around; a phone renders its own vendor's flat scarlet lozenge.
- * Same character, two different objects, and the centrepiece of the hero was
- * the one thing on the page that changed shape depending on where it was
- * opened.
- *
- * So it is a path now, in the page's own rose, lit from the same upper-left the
- * rest of the design is lit from — one heart everywhere, and one that belongs
- * to this palette rather than to Segoe or Noto.
- */
 function HeartGlyph({ size }: { size: number }) {
-  /* ——— the browser keeps its emoji ———
-   *
-   * The drawn path below exists because `❤️` is not one picture: every platform
-   * ships its own, so the centrepiece of the hero changed shape depending on
-   * where the page was opened. That is a real problem *in the app*, where the
-   * vendor glyph is a flat scarlet lozenge that belongs to no palette here —
-   * and it is not a problem in a desktop browser, which renders the glossy,
-   * gradient-lit heart the design was actually composed around. So the site
-   * goes back to the emoji it was drawn with and the app keeps the path, which
-   * is the one arrangement in which both of them look like the reference. */
   if (!MOBILE_APP) {
     return (
       <Text
@@ -1849,13 +1756,11 @@ function HeartGlyph({ size }: { size: number }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 32 32">
       <Defs>
-        {/* The house angle, so the heart is lit like every other surface. */}
         <SvgGradient id="heartBody" x1="0" y1="0.1" x2="1" y2="0.95">
           <Stop offset="0" stopColor="#FF6E92" />
           <Stop offset="0.42" stopColor={DefaultTheme.colors.primary} />
           <Stop offset="1" stopColor="#A80B2E" />
         </SvgGradient>
-        {/* The specular: a soft bloom on the left lobe, not a drawn shine. */}
         <SvgGradient id="heartSheen" x1="0.1" y1="0" x2="0.7" y2="1">
           <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0.72} />
           <Stop offset="0.55" stopColor="#FFFFFF" stopOpacity={0.12} />
@@ -1867,8 +1772,6 @@ function HeartGlyph({ size }: { size: number }) {
         d="M16 29.1c-.45 0-.88-.16-1.22-.44C6.5 21.9 1.9 16.3 1.9 10.75 1.9 6.2 5.5 2.7 10 2.7c2.55 0 4.85 1.2 6 3.15 1.15-1.95 3.45-3.15 6-3.15 4.5 0 8.1 3.5 8.1 8.05 0 5.55-4.6 11.15-12.88 17.91-.34.28-.77.44-1.22.44z"
         fill="url(#heartBody)"
       />
-      {/* The lift across the top lobes, clipped to the heart by being a smaller
-          copy of it rather than by a mask — one shape, so it can never slip. */}
       <Path
         d="M16 29.1c-.45 0-.88-.16-1.22-.44C6.5 21.9 1.9 16.3 1.9 10.75 1.9 6.2 5.5 2.7 10 2.7c2.55 0 4.85 1.2 6 3.15 1.15-1.95 3.45-3.15 6-3.15 4.5 0 8.1 3.5 8.1 8.05 0 5.55-4.6 11.15-12.88 17.91-.34.28-.77.44-1.22.44z"
         fill="url(#heartSheen)"
@@ -1884,7 +1787,6 @@ function Bob({
 }: {
   children: ReactNode;
   style?: StyleProp<ViewStyle>;
-  /** False once the hero has scrolled away — see `heroLive`. */
   live?: boolean;
 }) {
   const reducedMotion = useReducedMotion();
@@ -1915,20 +1817,6 @@ function Bob({
   );
 }
 
-/**
- * The name, drawn in the same line as the lead — and still breathing between
- * the two ends of the rose ramp once the ink is down, exactly as the original
- * `shimmer` keyframe did.
- *
- * The breathing is a native cross-fade now rather than an animated fill. A
- * colour cannot be handed to the native driver, so the old animated-colour
- * version was a `useNativeDriver: false` loop ticking at 60fps for as long as
- * the hero was on screen — a JS frame, a prop write per glyph and a
- * main-thread text redraw, every frame, while the reader sat "idle" at the
- * top of the page. `TracedText` draws each glyph twice instead — once in each
- * rose — and fades the copy on this value, which blends to the same colour at
- * every point of the sweep without JavaScript ever being asked for a frame.
- */
 function ShimmerName({
   name,
   size,
@@ -1940,7 +1828,6 @@ function ShimmerName({
   name: string;
   size: number;
   active: boolean;
-  /** False once the hero has scrolled away — see `heroLive`. */
   live: boolean;
   indexOffset: number;
   style?: StyleProp<ViewStyle>;
@@ -1949,10 +1836,6 @@ function ShimmerName({
   const shimmer = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    /* Native-driven, so it costs JavaScript nothing — but it still stops with
-       the rest of the headline, because a loop that never ends is a layer the
-       compositor redraws forever on behalf of a name six screens behind the
-       reader. */
     if (reducedMotion || !live) {
       return;
     }
@@ -2011,31 +1894,19 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
 
-  /* hero */
   hero: {
     justifyContent: "center",
   },
-  /** The frame everything in the hero is pinned to the edges of. */
   heroStage: {
     flex: 1,
     width: "100%",
     maxWidth: 1180,
     alignSelf: "center",
   },
-  /**
-   * The app's hero: one centred column rather than four pinned corners.
-   *
-   * `justifyContent: 'center'` is what does the vertical half of it, and it can
-   * only work because the middle block gives up its `flexGrow` at the same time
-   * — see `heroCentreApp`. With the middle still growing there is no free space
-   * left in the column for this to distribute, and the hero would sit exactly
-   * where it always did.
-   */
   heroStageCentred: {
     justifyContent: "center",
     alignItems: "center",
   },
-  /** The top band: a corner at each end of it and nothing in between. */
   heroBand: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -2049,70 +1920,38 @@ const styles = StyleSheet.create({
   heroBandCompact: {
     gap: 16,
   },
-  /** Centred, and no longer stretched to the full width: a band that fills the
-   *  frame centres nothing, because each block inside it is already as wide as
-   *  the column it would be centred in. */
   heroBandCentred: {
     alignSelf: "stretch",
     alignItems: "center",
   },
-  /**
-   * One of the four corner blocks.
-   *
-   * The whole hero is these and the heart. Each one gathers what used to be a
-   * band of its own into a single column pinned to its corner of the frame, so
-   * the composition is an empty rectangle with something written in each angle
-   * of it — and the flower is what fills the rectangle.
-   */
   heroCorner: {
     flexShrink: 1,
     alignItems: "flex-start",
   },
-  /** The right-hand pair, which hold their own edge rather than the left one. */
   heroCornerEnd: {
     flexShrink: 1,
     alignItems: "flex-end",
   },
-  /** Stacked there are no corners to hold — one column, every block against
-   *  the reading edge and free to use the whole width of it. */
   heroCornerStacked: {
     width: "100%",
     alignItems: "flex-start",
   },
-  /** …and in the app there is no corner to hold at all: every block takes the
-   *  middle of the column. Listed after the stacked rule at every call site, so
-   *  it is this one that wins. */
   heroCornerCentred: {
     width: "100%",
     alignItems: "center",
   },
-  /** Holds the heart in the middle and pushes the two bands apart. `flexGrow`
-   *  rather than `flex`, so a short screen lets the hero grow past its minimum
-   *  instead of squeezing the centrepiece. */
   heroCentre: {
     flexGrow: 1,
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 26,
   },
-  /** A stacked hero is already taller than the screen; the middle is where the
-   *  slack comes out of it. */
   heroCentreStacked: {
     paddingVertical: 12,
   },
   heroCentreCompact: {
     paddingVertical: 4,
   },
-  /**
-   * The heart stops pushing the two bands apart.
-   *
-   * On the site the middle block is the spacer — it grows into whatever the
-   * screen has spare, which is what holds the four corners in their corners. A
-   * centred hero wants the opposite: the slack has to stay *outside* the
-   * column so `heroStageCentred` can put half of it above and half below. So
-   * the block shrinks to the heart, and the heart becomes the middle of a
-   * centred stack rather than the thing prising one open.
-   */
   heroCentreApp: {
     flexGrow: 0,
     paddingVertical: 18,
@@ -2139,15 +1978,12 @@ const styles = StyleSheet.create({
     width: 306,
     flexShrink: 0,
   },
-  /** The invitation keeps a card's width rather than a column's — stretched to
-   *  the full frame it stops reading as a card at all — and is centred in it. */
   heroCardWrapApp: {
     width: "100%",
     maxWidth: 360,
     alignSelf: "center",
   },
 
-  /* hero — the mark */
   markRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -2161,17 +1997,12 @@ const styles = StyleSheet.create({
     color: DefaultTheme.colors.ink,
   },
 
-  /* hero — the index */
-  /** Sits under the mark in the bottom corner, so the space between the two is
-   *  carried here rather than by a gap on the block — the headline in the
-   *  opposite corner sets its own, and the two must not be told the same one. */
   heroIndex: {
     gap: 2,
     marginTop: 16,
   },
   chapterPress: {
     paddingVertical: 6,
-    // The row is what moves on hover, so the touch target must not.
     alignSelf: "flex-start",
   },
   chapterRow: {
@@ -2179,7 +2010,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
   },
-  /** The mark in front of the label — the reference's slash, drawn. */
   chapterRule: {
     width: 14,
     height: 1,
@@ -2194,7 +2024,6 @@ const styles = StyleSheet.create({
     color: DefaultTheme.colors.label,
   },
 
-  /* hero — the paragraph */
   heroSubtitleWrap: {
     maxWidth: 400,
     flexShrink: 1,
@@ -2203,7 +2032,6 @@ const styles = StyleSheet.create({
   heroSubtitleWrapStacked: {
     maxWidth: 560,
   },
-  /** `fontSize` and `lineHeight` are set by the caller — they scale together. */
   heroSubtitle: {
     fontFamily: DefaultTheme.fonts.displayItalic,
     fontStyle: ITALIC,
@@ -2216,14 +2044,11 @@ const styles = StyleSheet.create({
   heroSubtitleCentred: {
     textAlign: "center",
   },
-  /** Wider than the site's measure, because the type is a step larger and the
-   *  column it is centred in is the whole screen. */
   heroSubtitleWrapCentred: {
     maxWidth: 620,
     marginTop: 18,
   },
 
-  /* hero — the centrepiece */
   heroHeart: {
     alignItems: "center",
     justifyContent: "center",
@@ -2236,7 +2061,6 @@ const styles = StyleSheet.create({
     position: "absolute",
   },
 
-  /* hero — the headline */
   badge: {
     paddingVertical: 9,
     paddingHorizontal: 18,
@@ -2251,21 +2075,16 @@ const styles = StyleSheet.create({
   heroTitleRow: {
     marginTop: 22,
     flexDirection: "row",
-    // Lets the title break between its blocks on a narrow screen instead of
-    // shouldering the name off the edge.
     flexWrap: "wrap",
     alignItems: "center",
   },
-  /** In the app the headline takes the middle, and wraps into it. */
   heroTitleRowCentred: {
     justifyContent: "center",
   },
-  /** Both halves of the headline hold the left edge, wrapped or not. */
   tracedLeft: {
     justifyContent: "flex-start",
   },
 
-  /* hero — the invitation */
   cardShell: {
     ...DefaultTheme.shadow.soft,
   },
@@ -2313,7 +2132,6 @@ const styles = StyleSheet.create({
     color: DefaultTheme.colors.white,
   },
 
-  /* hero — the hint */
   heroHint: {
     alignItems: "center",
     gap: 8,
@@ -2335,12 +2153,9 @@ const styles = StyleSheet.create({
     color: DefaultTheme.colors.primary,
   },
 
-  /* shared section furniture */
   section: {
     width: "100%",
   },
-  /** See the journal section — this keeps a page that is still arriving in
-   *  front of the section underneath it. */
   timelineSection: {
     zIndex: 1,
   },
@@ -2380,7 +2195,6 @@ const styles = StyleSheet.create({
     color: DefaultTheme.colors.ink,
   },
 
-  /* letter */
   scrollHolder: {
     width: "100%",
     maxWidth: 820,
@@ -2422,7 +2236,6 @@ const styles = StyleSheet.create({
     lineHeight: 32,
   },
 
-  /* reasons */
   grid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -2432,9 +2245,6 @@ const styles = StyleSheet.create({
     width: "100%",
   },
 
-  /* song */
-  /** The clip that lets both halves start a screen's width outside the page
-   *  without the page itself growing sideways to accommodate them. */
   songSection: {
     alignItems: "center",
     overflow: "hidden",
@@ -2444,20 +2254,17 @@ const styles = StyleSheet.create({
     maxWidth: 760,
     marginTop: 54,
   },
-  /** `fontSize` and `lineHeight` are set by the caller — they scale together. */
   songLine: {
     fontFamily: DefaultTheme.fonts.displayItalic,
     fontStyle: ITALIC,
     color: DefaultTheme.colors.ink,
     textAlign: "center",
   },
-  /** Off the rose card now, so the caption is ink like everything else. */
   songCaption: {
     fontSize: 12.5,
     color: DefaultTheme.colors.label,
   },
 
-  /* chrome */
   progressTrack: {
     position: "absolute",
     left: 0,

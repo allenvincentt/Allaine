@@ -15,18 +15,6 @@ import { DefaultTheme } from '@/constants/defaultTheme';
 import { GradientStyles, gradientStyle } from '@/constants/gradient';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 
-/**
- * The scalloped rim, which is the whole silhouette of the reference seal: a
- * ring of soft lobes pushed out by the wax as the die came down. Each lobe is
- * a disc sitting on a ring just inside the box, wide enough that neighbours
- * overlap and close into one continuous outline.
- *
- * The reference's wave is *shallow* — the outline swells and dips by a few
- * per cent, not a third. Deep lobes turn the seal into a flower. What sells it
- * instead is the jitter: sixteen identical bumps evenly spaced is a cog,
- * sixteen slightly different ones slightly out of step is a hand pour. Pairs
- * are `[how far the lobe swells, how far it drifts off its station]`.
- */
 const SCALLOP_JITTER = [
   [1.02, 0.3],
   [0.94, -0.54],
@@ -46,21 +34,12 @@ const SCALLOP_JITTER = [
   [0.99, -0.64],
 ] as const;
 
-/** Radius the lobe centres sit on, and their base diameter. Both fractions of
- *  the box, so the seal scales cleanly. */
 const SCALLOP_RING = 0.4;
 const SCALLOP_SIZE = 0.18;
 
-/** The body under the lobes. Has to reach past where neighbouring lobes cross,
- *  or the valleys open up — but not past the lobes themselves, or the outline
- *  goes back to being a plain circle. */
 const CORE = 0.84;
-/** The dish pressed into the pour, and the band left standing around it. */
 const FIELD = 0.64;
-/** Where the struck lettering runs, midway along that band. */
 const LEGEND = 0.375;
-/** How many marks are in it. At this size they read as a beaded ring, which is
- *  exactly what a ring of 2px letters looks like. */
 const LEGEND_MARKS = 20;
 
 const SCALLOPS = SCALLOP_JITTER.map(([grow, drift], index) => {
@@ -68,13 +47,11 @@ const SCALLOPS = SCALLOP_JITTER.map(([grow, drift], index) => {
 
   return {
     d: SCALLOP_SIZE * grow,
-    /* A shade wider than tall — the pour spread sideways under the press. */
     cx: 0.5 + Math.cos(turn) * SCALLOP_RING,
     cy: 0.5 + Math.sin(turn) * SCALLOP_RING * 0.97,
   };
 });
 
-/** Chips that come away from the break. Direction is in fractions of the box. */
 const CRUMBS = [
   { cx: 0.38, cy: 0.44, d: 0.1, dx: -0.5, dy: 0.62, spin: '-120deg' },
   { cx: 0.58, cy: 0.5, d: 0.08, dx: 0.56, dy: 0.5, spin: '140deg' },
@@ -85,41 +62,20 @@ const SPECULAR = gradientStyle(
   'radial-gradient(circle, rgba(255,253,244,0.58) 0%, rgba(255,250,236,0.18) 44%, rgba(255,250,236,0) 74%)',
 );
 
-/** Never animated — the stand-in when a caller does not pass a `fracture`. */
 const INTACT = new Animated.Value(0);
 
 type WaxSealProps = {
   size: number;
-  /** The letter pressed into the die, when `emblem` is `monogram`. */
   monogram?: string;
-  /**
-   * What the die carries. `floral` is the little botanical sprig from the
-   * reference photograph; `monogram` presses a single letter instead.
-   */
   emblem?: 'floral' | 'monogram';
-  /** 0 keeps the seal whole; driving it to 1 snaps it in two and drops it. */
   fracture?: Animated.Value | Animated.AnimatedInterpolation<number>;
   onPress?: () => void;
   disabled?: boolean;
-  /**
-   * Whether the seal breathes. It is the only affordance the envelope has, so
-   * it needs *something* — but the reference seal is pressed flat onto the
-   * paper, so this is a slow swell of the wax and its own sheen rather than a
-   * glow ring, which would read as a bubble drawn round it.
-   */
   glow?: boolean;
   accessibilityLabel?: string;
   style?: StyleProp<ViewStyle>;
 };
 
-/**
- * A hand-poured wax seal: a scalloped satin blob with a die struck into it,
- * the device standing proud of a recessed field and a ring of lettering round
- * the band between the two. Built out of layered gradients rather than an
- * image so it stays sharp at any size, and so it can be broken cleanly in half
- * — the two halves are the same drawing behind two adjacent clips, so at rest
- * the seam is invisible.
- */
 export function WaxSeal({
   size,
   monogram = 'A',
@@ -132,11 +88,6 @@ export function WaxSeal({
   style,
 }: WaxSealProps) {
   const reducedMotion = useReducedMotion();
-  /* True the moment the enclosing section reveals, and always outside a reveal
-     provider — the envelope's seal is unaffected. On the landing page the seal
-     is mounted screens before it is seen, and a glow that pulses at zero
-     opacity from the first frame is a loop the compositor pays for on behalf
-     of nobody. */
   const revealed = useRevealed();
   const split = fracture ?? INTACT;
   const press = useRef(new Animated.Value(0)).current;
@@ -168,18 +119,12 @@ export function WaxSeal({
     return () => animation.stop();
   }, [pulse, reducedMotion, glow, revealed]);
 
-  /* The seam. The left half is dealt the extra half pixel and the right half
-     is laid over it, so the two overlap rather than butting: butted clips let
-     sub-pixel rounding open a hairline straight down the middle of the seal,
-     and the overlap cannot show because both halves are the same drawing at
-     the same place. */
   const leftWidth = Math.ceil(size / 2);
   const rightWidth = size - leftWidth;
 
   const motion = useMemo(() => {
     const drift = size * 0.36;
     return {
-      /* A beat of resistance, then it gives. */
       scale: split.interpolate({
         inputRange: [0, 0.2, 1],
         outputRange: [1, 1.07, 0.9],
@@ -215,14 +160,11 @@ export function WaxSeal({
         outputRange: [1, 0.92, 0],
         extrapolate: 'clamp',
       }),
-      /* The shadow the wax throws goes the moment the wax lifts off the sheet. */
       castFade: split.interpolate({
         inputRange: [0, 0.24],
         outputRange: [1, 0],
         extrapolate: 'clamp',
       }),
-      /* The fracture line itself: dark, and only on show while the two halves
-         are still close enough together for it to be a crack rather than a gap. */
       crackFade: split.interpolate({
         inputRange: [0, 0.16, 0.34, 0.72],
         outputRange: [0, 0.9, 0.55, 0],
@@ -242,8 +184,6 @@ export function WaxSeal({
   }, [split, size]);
 
   const pressScale = press.interpolate({ inputRange: [0, 1], outputRange: [1, 0.93] });
-  /* The breath, such as it is: a couple of per cent of swell, which catches
-     the eye in motion and is invisible in a screenshot. */
   const breath = glow
     ? pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.025] })
     : undefined;
@@ -263,9 +203,6 @@ export function WaxSeal({
           ],
         },
       ]}>
-      {/* The shadow the wax lays on the sheet. It stops just short of the wax's
-          own edge, so what you see is a seal pressed onto paper rather than one
-          sitting inside a halo. */}
       <Animated.View
         pointerEvents="none"
         style={[
@@ -300,7 +237,6 @@ export function WaxSeal({
         <View style={[styles.faceHolder, { width: size, height: size, left: 0 }]}>
           <SealFace size={size} monogram={monogram} emblem={emblem} />
         </View>
-        {/* The torn face of the break, only visible on the inside edge. */}
         <Animated.View
           style={[
             styles.crackFace,
@@ -335,7 +271,6 @@ export function WaxSeal({
         />
       </Animated.View>
 
-      {/* Wax is brittle: a few chips come away from the seam and drop. */}
       {CRUMBS.map((crumb) => (
         <Animated.View
           key={`${crumb.cx}-${crumb.cy}`}
@@ -405,7 +340,6 @@ export function WaxSeal({
   );
 }
 
-/** One complete drawing of the seal. Rendered twice, behind the two clips. */
 function SealFace({
   size,
   monogram,
@@ -420,14 +354,11 @@ function SealFace({
   const legend = size * LEGEND;
   const emboss = Math.max(1, size * 0.02);
 
-  /* The lettering. Rotating each mark about the seal's centre rather than its
-     own means one view per mark instead of a wrapper apiece. */
   const markWidth = Math.max(1, size * 0.017);
   const markHeight = Math.max(1.5, size * 0.034);
 
   return (
     <View style={StyleSheet.absoluteFill}>
-      {/* the lobes the wax was pushed out into */}
       {SCALLOPS.map((lobe) => (
         <View
           key={`${lobe.cx}-${lobe.cy}`}
@@ -444,7 +375,6 @@ function SealFace({
         />
       ))}
 
-      {/* the body of the pour, laid over the middle of them */}
       <View
         style={[
           styles.core,
@@ -459,16 +389,12 @@ function SealFace({
         ]}
       />
 
-      {/* One vignette over body *and* lobes, which is what fuses them into a
-          single piece of wax rather than a disc with bumps stuck on. Clipped to
-          a circle, or its corners would paint shade onto bare paper. */}
       <View
         pointerEvents="none"
         style={[styles.glaze, { borderRadius: size / 2 }]}>
         <View style={[StyleSheet.absoluteFill, GradientStyles.sealRim]} />
       </View>
 
-      {/* the flat band the die left standing, lit along its upper left */}
       <View
         pointerEvents="none"
         style={[
@@ -484,7 +410,6 @@ function SealFace({
         ]}
       />
 
-      {/* and the ring of lettering struck into it */}
       {Array.from({ length: LEGEND_MARKS }, (_, index) => (
         <View
           key={index}
@@ -497,7 +422,6 @@ function SealFace({
               borderRadius: markWidth / 2,
               left: (size - markWidth) / 2,
               top: size / 2 - legend - markHeight / 2,
-              // The seal's centre, expressed in this mark's own box.
               transformOrigin: `${markWidth / 2}px ${markHeight / 2 + legend}px`,
               transform: [{ rotate: `${(index / LEGEND_MARKS) * 360}deg` }],
             },
@@ -505,7 +429,6 @@ function SealFace({
         />
       ))}
 
-      {/* the dish pressed into the pour */}
       <View
         style={[
           styles.field,
@@ -523,7 +446,6 @@ function SealFace({
           style={[StyleSheet.absoluteFill, GradientStyles.sealFieldShade, { borderRadius: field / 2 }]}
         />
 
-        {/* the rule cut round the lip of the dish */}
         <View
           pointerEvents="none"
           style={[
@@ -553,9 +475,6 @@ function SealFace({
           ]}
         />
 
-        {/* the device, standing proud of the recessed field — drawn twice or
-            three times over at slight offsets, and never outlined: what makes
-            it read as raised is where its shadow and its lip fall */}
         {emblem === 'floral' ? (
           <View pointerEvents="none" style={styles.emblem}>
             <Sprig
@@ -570,8 +489,6 @@ function SealFace({
         )}
       </View>
 
-      {/* the satin sweep, and the two soft glints on the rim — again inside a
-          circular clip so nothing lands outside the wax */}
       <View pointerEvents="none" style={[styles.glaze, { borderRadius: size / 2 }]}>
         <View style={[StyleSheet.absoluteFill, GradientStyles.sealSheen]} />
         <View
@@ -608,26 +525,7 @@ function SealFace({
   );
 }
 
-/**
- * The single letter cut into the die, standing proud of the dish it sits in.
- *
- * A struck letter is not a coloured letter — it is the *same wax* as the floor
- * around it, an eighth of a millimetre higher, and the only thing that tells
- * you so is what the light does at its two edges. So it is drawn three times
- * over: the shadow the raised stroke throws, offset away from the light; the
- * lip the die pulled up on the near side, offset into it; and the flat top of
- * the stroke laid over the middle of both, a shade lighter than the dish
- * because it is that much closer to the source. Nothing is outlined and
- * nothing is tinted — all three passes are the letter in the same face at the
- * same size, and the relief is entirely in the two or three points between
- * them.
- *
- * Each pass is centred by its own box rather than positioned, so the letter
- * sits on the middle of the dish at every size the seal is used at.
- */
 function Monogram({ field, letter }: { field: number; letter: string }) {
-  /* How far the stroke stands off the floor. Everything else is measured off
-     this, so the relief stays in proportion as the seal scales. */
   const relief = Math.max(1, field * 0.042);
 
   const glyph = {
@@ -635,8 +533,6 @@ function Monogram({ field, letter }: { field: number; letter: string }) {
     fontSize: field * 0.66,
     lineHeight: field * 0.92,
     textAlign: 'center' as const,
-    /* Parisienne hangs its capitals a touch low in the line box, and the eye
-       reads a monogram off its ink, not off its metrics. */
     marginTop: -field * 0.035,
   };
 
@@ -660,11 +556,6 @@ function Monogram({ field, letter }: { field: number; letter: string }) {
   );
 }
 
-/**
- * The device on the die: a blossom over a pair of leafed stems, the botanical
- * sprig from the reference stamp. One flat colour per pass — the relief comes
- * from stacking two of these at slightly different offsets.
- */
 function Sprig({
   size,
   color,
@@ -683,8 +574,6 @@ function Sprig({
     width: petalWidth,
     height: petalHeight,
     left: (size - petalWidth) / 2,
-    // The base of every petal sits on the flower's centre, which is where they
-    // all pivot from.
     top: size * 0.34 - petalHeight,
     transformOrigin: 'bottom' as const,
     borderTopLeftRadius: petalWidth / 2,
@@ -730,7 +619,6 @@ function Sprig({
         <View key={angle} style={[petal, { transform: [{ rotate: `${angle}deg` }] }]} />
       ))}
 
-      {/* the eye of the flower */}
       <View
         style={{
           position: 'absolute',
@@ -743,7 +631,6 @@ function Sprig({
         }}
       />
 
-      {/* the two stems, and the leaves off them */}
       <View style={[stem, { transform: [{ rotate: '-30deg' }] }]} />
       <View style={[stem, { transform: [{ rotate: '30deg' }] }]} />
 
@@ -766,7 +653,6 @@ function Sprig({
 }
 
 const styles = StyleSheet.create({
-  /** The glow and the cast shadow, both of which sit behind the wax. */
   underlay: {
     position: 'absolute',
     zIndex: -1,
@@ -775,8 +661,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
   },
-  /** Flat, and matched to where `sealWax` ends, so the join is invisible and
-   *  the lighting across body and lobes comes from `sealRim` and `sealSheen`. */
   scallop: {
     position: 'absolute',
     backgroundColor: '#B09A72',
@@ -785,7 +669,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     backgroundColor: '#B09A72',
   },
-  /** A coat that has to stop at the wax's edge rather than the box's. */
   glaze: {
     ...StyleSheet.absoluteFill,
     overflow: 'hidden',
@@ -793,7 +676,6 @@ const styles = StyleSheet.create({
   band: {
     position: 'absolute',
   },
-  /** One struck letter of the ring legend, at this size a bead. */
   mark: {
     position: 'absolute',
     backgroundColor: 'rgba(88,68,42,0.4)',
@@ -814,19 +696,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  /** What the raised stroke throws down onto the floor of the dish. Carries a
-   *  soft shadow of its own, because wax takes no hard edge. */
   monogramShadow: {
     color: 'rgba(74, 56, 30, 0.6)',
     textShadowColor: 'rgba(74, 56, 30, 0.42)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
   },
-  /** The lip on the side the light comes from, where the die lifted the wax. */
   monogramLip: {
     color: 'rgba(255, 251, 238, 0.72)',
   },
-  /** And the flat top of the stroke — the dish's own colour, one step up. */
   monogramFace: {
     color: '#E7DBBE',
     textShadowColor: 'rgba(96, 74, 44, 0.34)',
@@ -839,7 +717,6 @@ const styles = StyleSheet.create({
   glint: {
     position: 'absolute',
   },
-  /** The raw inside of the break — wax has no gloss on a fresh fracture. */
   crackFace: {
     position: 'absolute',
     top: '14%',

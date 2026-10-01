@@ -134,12 +134,6 @@ const FallingPetal = memo(function FallingPetal({
     };
   }, [petal, progress]);
 
-  /* Built once per fall rather than once per render.
-     Every entry here is a node in the animated graph or a gradient parsed out
-     of a template string, and none of them depends on anything but the seed —
-     so rebuilding them because something else on the page changed is a fistful
-     of allocations and a fresh set of native animation nodes bought for a petal
-     that is doing exactly what it was already doing. */
   const motion = useMemo(
     () => ({
       left: petal.left,
@@ -224,8 +218,6 @@ const Twinkle = memo(function Twinkle({ width, height }: { width: number; height
   const motion = useMemo(() => {
     const halo = sparkle.size * SPARKLE_GLOW_SCALE;
     return {
-      /* The box is the halo now rather than the dot, so the sparkle is placed
-         by its centre — which is where the old shadow was centred too. */
       box: {
         left: sparkle.left - halo / 2,
         top: sparkle.top - halo / 2,
