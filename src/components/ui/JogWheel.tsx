@@ -1,39 +1,57 @@
 import { useEffect, useRef } from 'react';
-import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  Animated,
+  Easing,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type StyleProp,
+  type TextStyle,
+} from 'react-native';
 
+import { useRevealed } from '@/components/ui/Reveal';
 import { DefaultTheme } from '@/constants/defaultTheme';
 import { GradientStyles } from '@/constants/gradient';
 import { useResponsive } from '@/hooks/useTheme';
 
 const TURNS = 2000;
-const PERIOD = 7000;
+/** Milliseconds per revolution. Fast enough that the turn reads at a glance. */
+const PERIOD = 2600;
 const GROOVES = 7;
+
+const MARKERS = [{ angle: 0, opacity: 0.5 }];
+
+const HALO_RATIO = 230 / 180;
 
 type JogWheelProps = {
   playing: boolean;
   onPress: () => void;
   label: string;
+  size?: number;
+  captionStyle?: StyleProp<TextStyle>;
 };
 
-/** The record you press to hear "our song" before the question. */
-export function JogWheel({ playing, onPress, label }: JogWheelProps) {
+export function JogWheel({ playing, onPress, label, size: given, captionStyle }: JogWheelProps) {
   const { clamp } = useResponsive();
-  const size = clamp(180, 24, 240);
-  const haloSize = clamp(230, 32, 300);
+  const revealed = useRevealed();
+  const size = given ?? clamp(180, 24, 240);
+  const haloSize = size * HALO_RATIO;
 
   const spin = useRef(new Animated.Value(0)).current;
   const spinAt = useRef(0);
   const halo = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    if (!playing) {
+      return;
+    }
     const id = spin.addListener(({ value }) => {
       spinAt.current = value;
     });
     return () => spin.removeListener(id);
-  }, [spin]);
+  }, [spin, playing]);
 
-  // Resuming continues from the angle the record stopped at, so pausing never
-  // snaps the label back to the top.
   useEffect(() => {
     if (!playing) {
       spin.stopAnimation();
@@ -52,33 +70,44 @@ export function JogWheel({ playing, onPress, label }: JogWheelProps) {
   }, [playing, spin]);
 
   useEffect(() => {
+    if (!revealed) {
+      return;
+    }
     const animation = Animated.loop(
       Animated.sequence([
         Animated.timing(halo, {
           toValue: 1,
           duration: 2500,
           easing: Easing.inOut(Easing.ease),
+          isInteraction: false,
           useNativeDriver: true,
         }),
         Animated.timing(halo, {
           toValue: 0,
           duration: 2500,
           easing: Easing.inOut(Easing.ease),
+          isInteraction: false,
           useNativeDriver: true,
         }),
       ]),
     );
     animation.start();
     return () => animation.stop();
-  }, [halo]);
+  }, [halo, revealed]);
 
   const rotate = spin.interpolate({
     inputRange: [0, TURNS],
     outputRange: ['0deg', `${TURNS * 360}deg`],
   });
 
+  /* The record's own furniture is sized off the record, so it can be asked for
+     at any diameter without the rim, the marker and the label drifting out of
+     proportion with it. */
+  const rim = Math.max(4, size * 0.033);
+  const iconSize = size * 0.14;
+
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, { gap: Math.max(22, size * 0.1) }]}>
       <Animated.View
         pointerEvents="none"
         style={[
@@ -104,11 +133,12 @@ export function JogWheel({ playing, onPress, label }: JogWheelProps) {
               width: size,
               height: size,
               borderRadius: size / 2,
+              borderWidth: rim,
               transform: [{ rotate }],
             },
           ]}>
           {Array.from({ length: GROOVES }, (_, index) => {
-            const inset = 10 + index * ((size * 0.32 - 10) / GROOVES);
+            const inset = size * 0.056 + index * ((size * 0.32 - size * 0.056) / GROOVES);
             return (
               <View
                 key={index}
@@ -127,34 +157,66 @@ export function JogWheel({ playing, onPress, label }: JogWheelProps) {
             );
           })}
 
-          <View style={[styles.labelDisc, { borderRadius: size / 2 }]}>
-            <Text style={[styles.icon, { fontSize: size * 0.14 }]}>{playing ? '❚❚' : '▶'}</Text>
-          </View>
+          {/* Concentric grooves say nothing about which way round the record is,
+              so a few radial marks give the spin something to be read against. */}
+          {MARKERS.map(({ angle, opacity }) => (
+            <View
+              key={angle}
+              pointerEvents="none"
+              style={[styles.markerTrack, { transform: [{ rotate: `${angle}deg` }] }]}>
+              <View
+                style={[
+                  styles.marker,
+                  {
+                    top: size * 0.055,
+                    height: size * 0.28,
+                    width: Math.max(1.5, size * 0.011),
+                    borderRadius: size * 0.011,
+                    opacity,
+                  },
+                ]}
+              />
+            </View>
+          ))}
 
-          <View style={styles.spindle} />
+          <View style={[styles.labelDisc, { borderRadius: size / 2 }]}>
+            <Text
+              style={[
+                styles.icon,
+                {
+                  fontSize: iconSize,
+                  lineHeight: iconSize * 1.16,
+                  // The play glyph carries its own left-hand bearing; nudging it
+                  // over is what puts the triangle's mass on the label's centre.
+                  marginLeft: playing ? 0 : iconSize * 0.06,
+                },
+              ]}>
+              {playing ? '❚❚' : '▶'}
+            </Text>
+          </View>
         </Animated.View>
       </Pressable>
 
-      <Text style={styles.caption}>{label}</Text>
+      <Text style={[styles.caption, captionStyle]}>{label}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  /** `gap` is set by the caller — it scales with the record. */
   root: {
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 22,
   },
   halo: {
     position: 'absolute',
     top: 0,
     ...GradientStyles.haloSoft,
   },
+  /** `borderWidth` is the rim, and is set by the caller for the same reason. */
   disc: {
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 6,
     borderColor: 'rgba(255, 255, 255, 0.26)',
     backgroundColor: '#2A0A15',
     shadowColor: '#500519',
@@ -182,14 +244,21 @@ const styles = StyleSheet.create({
   },
   icon: {
     color: DefaultTheme.colors.primaryDeep,
-    paddingLeft: 2,
+    textAlign: 'center',
+    textAlignVertical: 'center',
+    includeFontPadding: false,
   },
-  spindle: {
+  markerTrack: {
     position: 'absolute',
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#1A0810',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+  },
+  marker: {
+    position: 'absolute',
+    backgroundColor: 'rgba(255, 255, 255, 0.85)',
   },
   caption: {
     fontFamily: DefaultTheme.fonts.bodyMedium,

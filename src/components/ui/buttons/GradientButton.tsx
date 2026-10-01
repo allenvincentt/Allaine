@@ -29,10 +29,6 @@ type GradientButtonProps = {
   accessibilityLabel?: string;
 };
 
-/**
- * `gradientStyle` writes both the native and the web property, so each ramp is
- * built once here rather than branching on platform at every layer.
- */
 const TONES: Record<
   GradientButtonTone,
   { base: ViewStyle; hover: ViewStyle; pressed: ViewStyle; shadowColor: string }
@@ -84,8 +80,6 @@ export const GradientButton = forwardRef<View, GradientButtonProps>(
       }).start();
     };
 
-    /* Compress on the way down, spring back on release — the give is what
-       makes it feel like a button rather than a rectangle that changed colour. */
     const collapse = () => {
       Animated.timing(scale, {
         toValue: 0.96,
@@ -109,7 +103,6 @@ export const GradientButton = forwardRef<View, GradientButtonProps>(
       outputRange: [0, -3],
     });
 
-    /* Slight at rest, and only deep enough on hover to sell the lift. */
     const shadowOpacity = hoverProgress.interpolate({
       inputRange: [0, 1],
       outputRange: fab ? [0.14, 0.2] : [0.1, 0.16],

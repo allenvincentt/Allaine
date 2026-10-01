@@ -1,9 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, View, useWindowDimensions } from 'react-native';
 
 import { DefaultTheme } from '@/constants/defaultTheme';
 import { gradientStyle } from '@/constants/gradient';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
+
+const SPARKLE_GLOW = gradientStyle(
+  'radial-gradient(circle, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.55) 26%, rgba(255,255,255,0.16) 52%, rgba(255,255,255,0) 74%)',
+);
+
+const SPARKLE_GLOW_SCALE = 5;
 
 const TINTS = [
   DefaultTheme.colors.primaryLight,
@@ -13,7 +19,6 @@ const TINTS = [
 ];
 
 type Petal = {
-  /** Bumped on every reseed; this is what restarts the fall. */
   cycle: number;
   left: number;
   size: number;
@@ -22,7 +27,6 @@ type Petal = {
   duration: number;
   opacity: number;
   tint: string;
-  /** Where in its fall this petal begins — only ever non-zero on the first. */
   start: number;
 };
 
@@ -60,16 +64,6 @@ function sparkleSeed(cycle: number, width: number, height: number, mid: boolean)
   };
 }
 
-/**
- * The ambient layer: petals drifting past while they turn, over a field of
- * sparkles on their own clocks.
- *
- * Every petal reseeds itself the instant it leaves the bottom of the screen —
- * new lane, size, speed, spin and drift — and starts again from above the top,
- * so the fall never runs out and never repeats. The first generation starts
- * part-way down so the screen is already full on the first frame instead of
- * filling up over the opening seven seconds.
- */
 export function FallingPetals() {
   const { width, height } = useWindowDimensions();
   const reducedMotion = useReducedMotion();
@@ -103,9 +97,13 @@ export function FallingPetals() {
   );
 }
 
-function FallingPetal({ width, travel }: { width: number; travel: number }) {
-  /* Read through refs so a window resize retunes the *next* fall instead of
-     snapping every petal on screen back to the top. */
+const FallingPetal = memo(function FallingPetal({
+  width,
+  travel,
+}: {
+  width: number;
+  travel: number;
+}) {
   const box = useRef({ width, travel });
   box.current = { width, travel };
 
@@ -136,55 +134,61 @@ function FallingPetal({ width, travel }: { width: number; travel: number }) {
     };
   }, [petal, progress]);
 
+  /* Built once per fall rather than once per render.
+     Every entry here is a node in the animated graph or a gradient parsed out
+     of a template string, and none of them depends on anything but the seed —
+     so rebuilding them because something else on the page changed is a fistful
+     of allocations and a fresh set of native animation nodes bought for a petal
+     that is doing exactly what it was already doing. */
+  const motion = useMemo(
+    () => ({
+      left: petal.left,
+      width: petal.size,
+      height: petal.size,
+      borderTopLeftRadius: petal.size * 0.52,
+      borderTopRightRadius: petal.size * 0.08,
+      borderBottomRightRadius: petal.size * 0.52,
+      borderBottomLeftRadius: petal.size * 0.52,
+      ...gradientStyle(
+        `linear-gradient(106deg, ${petal.tint} 0%, ${DefaultTheme.colors.primarySoft} 100%)`,
+      ),
+      opacity: progress.interpolate({
+        inputRange: [0, 0.07, 0.88, 1],
+        outputRange: [0, petal.opacity, petal.opacity, 0],
+      }),
+      transform: [
+        {
+          translateY: progress.interpolate({
+            inputRange: [0, 1],
+            outputRange: [-travel * 0.12, travel],
+          }),
+        },
+        {
+          translateX: progress.interpolate({
+            inputRange: [0, 0.5, 1],
+            outputRange: [0, petal.sway, petal.sway * 0.34],
+          }),
+        },
+        {
+          rotate: progress.interpolate({
+            inputRange: [0, 1],
+            outputRange: ['0deg', `${petal.spin}deg`],
+          }),
+        },
+      ],
+    }),
+    [petal, progress, travel],
+  );
+
   return (
     <Animated.View
-      style={[
-        styles.petal,
-        {
-          left: petal.left,
-          width: petal.size,
-          height: petal.size,
-          borderTopLeftRadius: petal.size * 0.52,
-          borderTopRightRadius: petal.size * 0.08,
-          borderBottomRightRadius: petal.size * 0.52,
-          borderBottomLeftRadius: petal.size * 0.52,
-          ...gradientStyle(
-            `linear-gradient(106deg, ${petal.tint} 0%, ${DefaultTheme.colors.primarySoft} 100%)`,
-          ),
-          // Fading in and out at the ends is what hides the seam: a petal is
-          // never visible at the moment it is recycled.
-          opacity: progress.interpolate({
-            inputRange: [0, 0.07, 0.88, 1],
-            outputRange: [0, petal.opacity, petal.opacity, 0],
-          }),
-          transform: [
-            {
-              translateY: progress.interpolate({
-                inputRange: [0, 1],
-                outputRange: [-travel * 0.12, travel],
-              }),
-            },
-            {
-              // An S through the air rather than a straight diagonal.
-              translateX: progress.interpolate({
-                inputRange: [0, 0.5, 1],
-                outputRange: [0, petal.sway, petal.sway * 0.34],
-              }),
-            },
-            {
-              rotate: progress.interpolate({
-                inputRange: [0, 1],
-                outputRange: ['0deg', `${petal.spin}deg`],
-              }),
-            },
-          ],
-        },
-      ]}
+      renderToHardwareTextureAndroid
+      style={[styles.petal, motion]}
     />
   );
-}
+});
 
-function Twinkle({ width, height }: { width: number; height: number }) {
+const Twinkle = memo(function Twinkle({ width, height }: { width: number; height: number }) {
   const box = useRef({ width, height });
   box.current = { width, height };
 
@@ -217,33 +221,47 @@ function Twinkle({ width, height }: { width: number; height: number }) {
     };
   }, [sparkle, progress]);
 
+  const motion = useMemo(() => {
+    const halo = sparkle.size * SPARKLE_GLOW_SCALE;
+    return {
+      /* The box is the halo now rather than the dot, so the sparkle is placed
+         by its centre — which is where the old shadow was centred too. */
+      box: {
+        left: sparkle.left - halo / 2,
+        top: sparkle.top - halo / 2,
+        width: halo,
+        height: halo,
+        borderRadius: halo / 2,
+        opacity: progress.interpolate({
+          inputRange: [0, 0.5, 1],
+          outputRange: [0, 1, 0],
+        }),
+        transform: [
+          {
+            scale: progress.interpolate({
+              inputRange: [0, 0.5, 1],
+              outputRange: [0.4, 1, 0.4],
+            }),
+          },
+        ],
+      },
+      core: {
+        width: sparkle.size,
+        height: sparkle.size,
+        borderRadius: sparkle.size / 2,
+      },
+    };
+  }, [sparkle, progress]);
+
   return (
     <Animated.View
-      style={[
-        styles.sparkle,
-        {
-          left: sparkle.left,
-          top: sparkle.top,
-          width: sparkle.size,
-          height: sparkle.size,
-          borderRadius: sparkle.size / 2,
-          opacity: progress.interpolate({
-            inputRange: [0, 0.5, 1],
-            outputRange: [0, 1, 0],
-          }),
-          transform: [
-            {
-              scale: progress.interpolate({
-                inputRange: [0, 0.5, 1],
-                outputRange: [0.4, 1, 0.4],
-              }),
-            },
-          ],
-        },
-      ]}
-    />
+      pointerEvents="none"
+      renderToHardwareTextureAndroid
+      style={[styles.sparkle, motion.box]}>
+      <View style={[styles.sparkleCore, motion.core]} />
+    </Animated.View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   root: {
@@ -257,10 +275,11 @@ const styles = StyleSheet.create({
   },
   sparkle: {
     position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...SPARKLE_GLOW,
+  },
+  sparkleCore: {
     backgroundColor: '#FFFFFF',
-    shadowColor: '#FFFFFF',
-    shadowOpacity: 0.9,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 0 },
   },
 });

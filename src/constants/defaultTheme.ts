@@ -1,25 +1,20 @@
-/**
- * The palette for "For Elle" — a rose/crimson letter on frosted glass.
- *
- * Every surface in the app sits on the same pink field, so the glass
- * materials in `glassTheme.ts` tint against `colors.background`.
- */
+import { Platform, type TextStyle } from 'react-native';
+
+export const ITALIC: TextStyle['fontStyle'] = Platform.OS === 'android' ? 'normal' : 'italic';
+
 export const DefaultTheme = {
   colors: {
-    /* field */
     background: '#F0BFD3',
     backgroundSoft: '#F5C7DA',
     backgroundMid: '#F09FC0',
     backgroundDeep: '#E884AC',
     veil: '#3A0F1E',
 
-    /* paper */
     white: '#FFFFFF',
     surface: '#FFFDFB',
     surfaceMuted: '#FFF4F7',
     surfaceTint: '#FBE3EB',
 
-    /* accent */
     primary: '#E22C56',
     primaryDeep: '#B3123A',
     primaryDark: '#8E0F35',
@@ -29,7 +24,6 @@ export const DefaultTheme = {
     accent: '#D62F5D',
     warm: '#FFD9A8',
 
-    /* ink */
     ink: '#5A1128',
     inkSoft: '#63263A',
     inkMuted: '#6B3145',
@@ -38,7 +32,6 @@ export const DefaultTheme = {
     labelSoft: '#E07C9E',
     muted: '#B03C63',
 
-    /* lines */
     hairline: 'rgba(226, 44, 86, 0.16)',
     hairlineSoft: 'rgba(255, 255, 255, 0.72)',
   },
@@ -62,10 +55,6 @@ export const DefaultTheme = {
     xxl: 48,
   },
 
-  /**
-   * Family names match the exports of the @expo-google-fonts packages, which
-   * is what `useFonts` registers them under.
-   */
   fonts: {
     display: 'CormorantGaramond_300Light',
     displayRegular: 'CormorantGaramond_400Regular',
@@ -80,7 +69,6 @@ export const DefaultTheme = {
     script: 'Parisienne_400Regular',
   },
 
-  /** Uppercase micro-labels ("A LETTER IS WAITING") appear all over the design. */
   eyebrow: {
     fontSize: 11.5,
     letterSpacing: 3.2,

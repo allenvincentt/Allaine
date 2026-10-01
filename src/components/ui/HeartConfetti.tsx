@@ -41,20 +41,12 @@ type Particle = {
 type Batch = { id: number; particles: Particle[] };
 
 export type HeartConfettiHandle = {
-  /** A small burst at a touch point. */
   pop: (x: number, y: number, count?: number, scale?: number) => void;
-  /** The full "she said yes" moment: two side cannons plus falling rain. */
   celebrate: () => void;
 };
 
 const SAMPLES = 12;
 
-/**
- * Ports the canvas particle system from the web original. Each body's
- * trajectory is integrated once up front with the same per-frame rules
- * (gravity plus drag), then sampled into an interpolation so the whole flight
- * can run on the native driver as a single animation.
- */
 function buildParticle(
   id: string,
   x: number,

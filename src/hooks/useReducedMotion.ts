@@ -1,10 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AccessibilityInfo } from 'react-native';
 
-/**
- * The source design gates every ambient animation behind
- * `prefers-reduced-motion`. This is the platform equivalent.
- */
 export function useReducedMotion() {
   const [reduced, setReduced] = useState(false);
 

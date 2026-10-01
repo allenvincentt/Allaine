@@ -12,7 +12,7 @@ import {
 
 import { GradientButton } from '@/components/ui/buttons/GradientButton';
 import { ANSWER, QUESTION } from '@/constants/content';
-import { DefaultTheme } from '@/constants/defaultTheme';
+import { DefaultTheme, ITALIC } from '@/constants/defaultTheme';
 import { GradientStyles } from '@/constants/gradient';
 import { useResponsive } from '@/hooks/useTheme';
 
@@ -217,7 +217,7 @@ const styles = StyleSheet.create({
     marginTop: 24,
     maxWidth: 520,
     fontFamily: DefaultTheme.fonts.displayItalic,
-    fontStyle: 'italic',
+    fontStyle: ITALIC,
     color: 'rgba(255, 255, 255, 0.9)',
     textAlign: 'center',
   },
@@ -272,7 +272,7 @@ const styles = StyleSheet.create({
     marginTop: 24,
     maxWidth: 560,
     fontFamily: DefaultTheme.fonts.displayItalic,
-    fontStyle: 'italic',
+    fontStyle: ITALIC,
     color: 'rgba(255, 255, 255, 0.94)',
     textAlign: 'center',
   },

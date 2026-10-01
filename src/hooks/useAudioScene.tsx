@@ -21,7 +21,6 @@ type AudioScene = {
   startMusic: () => void;
 
   songPlaying: boolean;
-  /** True once the song has been started at least once. */
   songTouched: boolean;
   songEnded: boolean;
   toggleSong: () => void;
@@ -29,11 +28,6 @@ type AudioScene = {
 
 const AudioSceneContext = createContext<AudioScene | null>(null);
 
-/**
- * Holds both tracks for the life of the app so the background music keeps
- * playing across the envelope → landing transition, exactly as the single-page
- * original does.
- */
 export function AudioSceneProvider({ children }: { children: ReactNode }) {
   const music = useAudioPlayer(BACKGROUND_MUSIC);
   const song = useAudioPlayer(JOG_MUSIC);
@@ -43,9 +37,7 @@ export function AudioSceneProvider({ children }: { children: ReactNode }) {
   const [songTouched, setSongTouched] = useState(false);
   const fadeTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  /** Set when the song displaced the background music, so it can be put back. */
   const resumeMusic = useRef(false);
-  /** Previous value of the song's playing flag, to catch the edge where it stops. */
   const wasSongPlaying = useRef(false);
 
   useEffect(() => {
@@ -108,8 +100,6 @@ export function AudioSceneProvider({ children }: { children: ReactNode }) {
   );
 
   const toggleMusic = useCallback(() => {
-    // Reaching for the music control is a decision about the music, and it
-    // outranks any handback the song still owes it.
     resumeMusic.current = false;
     setMusic(!musicOn);
   }, [setMusic, musicOn]);
@@ -128,9 +118,6 @@ export function AudioSceneProvider({ children }: { children: ReactNode }) {
     if (songStatus.didJustFinish || song.currentTime >= Math.max(0, song.duration - 0.05)) {
       song.seekTo(0);
     }
-    // The song is the thing being listened to now, so the background music
-    // steps aside instead of playing underneath it. `setMusic` fades rather
-    // than cutting, so the handover is a dip and not a gap.
     if (musicOn) {
       resumeMusic.current = true;
       setMusic(false);
@@ -138,15 +125,6 @@ export function AudioSceneProvider({ children }: { children: ReactNode }) {
     song.play();
   }, [song, songStatus.didJustFinish, musicOn, setMusic]);
 
-  /**
-   * Hand the stage back when the song gives it up — however it does. Paused from
-   * the wheel and simply running out both land here, which is why this watches
-   * the flag rather than living inside the press handler.
-   *
-   * Edge-triggered on purpose: the status flag turns true a moment *after*
-   * `play()`, so a level test could see "not playing" while the music was
-   * already ducking and undo it on the spot.
-   */
   useEffect(() => {
     const stopped = wasSongPlaying.current && !songStatus.playing;
     wasSongPlaying.current = songStatus.playing;

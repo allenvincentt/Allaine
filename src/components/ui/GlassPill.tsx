@@ -3,7 +3,6 @@ import { useRef } from 'react';
 import {
   Animated,
   Easing,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -23,7 +22,6 @@ type GlassPillProps = {
   style?: StyleProp<ViewStyle>;
 };
 
-/** The frosted control pills that float over the page (music, cinematic mode). */
 export function GlassPill({ label, glyph, onPress, accessibilityLabel, style }: GlassPillProps) {
   const lift = useRef(new Animated.Value(0)).current;
 
@@ -55,12 +53,7 @@ export function GlassPill({ label, glyph, onPress, accessibilityLabel, style }: 
         onPressOut={() => animate(0)}
         style={styles.pressable}>
         <View pointerEvents="none" style={styles.frost}>
-          <BlurView
-            intensity={30}
-            tint="light"
-            style={StyleSheet.absoluteFill}
-            blurMethod={Platform.OS === 'android' ? 'dimezisBlurViewSdk31Plus' : undefined}
-          />
+          <BlurView intensity={30} tint="light" style={StyleSheet.absoluteFill} />
           <View style={[StyleSheet.absoluteFill, styles.tint]} />
         </View>
 

@@ -1,18 +1,20 @@
 {
   "expo": {
-    "name": "For Elle",
+    "name": "Allaine",
     "slug": "Allaine",
     "version": "1.0.0",
     "orientation": "portrait",
     "scheme": "allaine",
     "userInterfaceStyle": "light",
-    "backgroundColor": "#F0BFD3",
+    "backgroundColor": "#FFFFFF",
+    "icon": "./src/assets/LogoPNG.png",
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#F0BFD3"
+        "foregroundImage": "./src/assets/LogoPNG.png",
+        "backgroundColor": "#FFFFFF"
       },
       "predictiveBackGestureEnabled": false,
       "permissions": [
@@ -24,14 +26,19 @@
       "package": "com.anonymous.Allaine"
     },
     "web": {
-      "output": "static"
+      "output": "static",
+      "name": "Allaine",
+      "favicon": "./src/assets/LogoPNG.png"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#F0BFD3"
+          "image": "./src/assets/LogoPNG.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#FFFFFF"
         }
       ],
       "expo-video",

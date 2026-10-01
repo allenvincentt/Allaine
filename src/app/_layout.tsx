@@ -66,6 +66,7 @@ export default function RootLayout() {
                 screenOptions={{
                   headerShown: false,
                   animation: 'fade',
+                  title: 'Allaine',
                   contentStyle: { backgroundColor: DefaultTheme.colors.background },
                 }}
               />

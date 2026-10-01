@@ -5,23 +5,8 @@ import { useReducedMotion } from '@/hooks/useReducedMotion';
 
 const GLOW_SIZE = 140;
 
-/**
- * How much of the remaining distance the glow closes each frame. High enough
- * that it reads as stuck to the cursor — it is within a pixel or two after
- * about four frames — while still rounding off the corners of a fast flick.
- */
 const FOLLOW = 0.45;
 
-/**
- * A soft white heart that trails the pointer, web-only since it needs a
- * persistent cursor (touch has none, and native has no `window`/`document`).
- *
- * Driven off a rAF loop that eases towards the last known pointer position
- * rather than off a tween per event: a tween restarted on every `pointermove`
- * spends its whole life in the slow part of its own curve, which is what left
- * the glow lagging behind the cursor. The loop parks itself once it has caught
- * up, so an idle pointer costs nothing.
- */
 export function CursorHeartGlow() {
   const reducedMotion = useReducedMotion();
   const position = useRef(new Animated.ValueXY({ x: -GLOW_SIZE, y: -GLOW_SIZE })).current;
@@ -77,8 +62,6 @@ export function CursorHeartGlow() {
       target.y = event.clientY - GLOW_SIZE / 2;
 
       if (!placed) {
-        // First sighting: appear under the cursor rather than flying in from
-        // the corner it was parked in.
         placed = true;
         current.x = target.x;
         current.y = target.y;

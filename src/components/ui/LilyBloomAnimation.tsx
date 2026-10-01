@@ -1,6 +1,22 @@
 import { useVideoPlayer, VideoView } from 'expo-video';
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from 'react';
-import { Animated, Easing, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+} from 'react';
+import {
+  Animated,
+  Easing,
+  Platform,
+  StyleSheet,
+  useWindowDimensions,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 
 import { GradientStyles } from '@/constants/gradient';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
@@ -11,11 +27,27 @@ import { useReducedMotion } from '@/hooks/useReducedMotion';
  *
  * Seeking backwards is the one thing playback cannot do, so scrolling up is
  * served by seeks — and a seek costs the decode from the previous keyframe
- * forward. On the original that was up to 148 frames of 1080p for a single
- * picture, which is why scrolling up stepped. Here it is at most 4. The file is
- * 2.3× the size, which is what that costs.
+ * forward. On the original that was up to 148 frames for a single picture,
+ * which is why scrolling up stepped. Here it is at most 4.
+ *
+ * ——— and 720p rather than 1080p ———
+ *
+ * Because almost none of those rows were ever reaching the reader. The layer is
+ * fitted with `cover`, and cover fills by whichever side needs the most
+ * magnification — on a portrait handset that is the height, by a factor of
+ * better than two, which means three quarters of the source's *width* is
+ * cropped away before `BRANCH_ZOOM_COMPACT` has even been applied. The decoder
+ * was still decoding all of it: two million pixels a frame, on every played
+ * frame and again on every frame of every seek, on the same thread the page is
+ * being scrolled on. At 1280×720 that is 2.25× less work per frame for a
+ * picture that is then washed, vignetted and composited with `screen` at the
+ * back of the page — which is to say, for no difference anybody can see.
+ *
+ * Frame count, frame rate, duration and keyframe spacing are all identical to
+ * the 1080p build, so nothing that reads this clip by time had to move. The
+ * original is kept beside it: re-point this line to go back.
  */
-const LILY = require('@/assets/videos/LilyFlowerBloom2.scrub.mp4');
+const LILY = require('@/assets/videos/LilyFlowerBloom2.scrub.720.mp4');
 
 /**
  * The full scroll range maps onto this window of the source clip, in seconds.
@@ -23,7 +55,50 @@ const LILY = require('@/assets/videos/LilyFlowerBloom2.scrub.mp4');
  * page is scrolled, and the chase below cannot run past the end.
  */
 const SCRUB_START_SECONDS = 2;
-const SCRUB_END_SECONDS = 6;
+const SCRUB_END_SECONDS = 8;
+
+/* ——— how much of the clip is on screen ———
+ *
+ * The source is a wide shot: several stems, several blooms, and the one that
+ * actually opens is a modest part of the frame. Covered to a phone — tall,
+ * narrow, and cropped on the long side — that bloom came out a couple of
+ * hundred pixels across, sat behind a wash and a vignette, and was composited
+ * with `screen`, which can only ever *add* light to a page that is already
+ * pale. Three separate reasons for the same outcome: a background that was
+ * technically playing and effectively invisible.
+ *
+ * So the frame is pushed in until a single branch fills the screen. It is a
+ * crop, not a re-encode: `contentFit="cover"` still decides the fit, and this
+ * scales what `cover` produced, with `root`'s `overflow: hidden` taking the
+ * rest. `SHIFT` slides that crop off centre as a fraction of the screen —
+ * positive is right and down — because the stem worth keeping is rarely in the
+ * exact middle of a shot.
+ *
+ * ——— and how much of it a phone needs ———
+ *
+ * Far less, because `contentFit="cover"` has already done most of the pushing
+ * in by the time the frame reaches a tall, narrow screen. Cover fills by the
+ * shorter side, so a 16:9 source covering a portrait phone is scaled until its
+ * *height* fits and better than two thirds of its width is thrown away before
+ * this scale is applied at all. Multiplying that by the figure a desktop needs
+ * lands on a couple of petals blown up past the point of being a flower — a
+ * wash of pink filling the screen, which is what the background looked like on
+ * a phone and is the one thing a crop this deliberate must not produce.
+ *
+ * So the zoom is a ramp rather than a number: the full push-in on a window wide
+ * enough that cover is barely cropping anything, almost none of it on a phone
+ * where cover is already framing a branch by itself, and a straight line
+ * between the two. The widths either end are viewport widths in px.
+ *
+ * All of these are framing rather than logic. Nothing else reads them, and
+ * changing them cannot break the scrub; if the crop lands on the wrong stem,
+ * move it by eye.
+ */
+const BRANCH_ZOOM_WIDE = 2.15;
+const BRANCH_ZOOM_COMPACT = 1.12;
+const BRANCH_ZOOM_COMPACT_WIDTH = 420;
+const BRANCH_ZOOM_WIDE_WIDTH = 900;
+const BRANCH_SHIFT = { x: -0.06, y: 0.05 };
 
 /* ————————————————— how the clip is moved —————————————————
  *
@@ -123,14 +198,71 @@ const SEEK_WATCHDOG_MS = 250;
  * Native reports no seek completion — `currentTime` is fire and forget — so
  * there is nothing to retarget against and the native path keeps a plain
  * minimum spacing between writes instead.
+ *
+ * And "fire and forget" is exactly why the spacing has to be generous. On the
+ * web a seek is self-pacing: one is in flight, the next is aimed wherever the
+ * page has reached by the time it retires, and the decoder is never asked for
+ * two things at once. Native has no such feedback, so this interval is the
+ * *only* thing standing between a scroll and a queue of seeks — and at 64ms a
+ * fast scroll issued about fifteen a second, each one a fresh decode from a
+ * keyframe, piling into a player that had not finished the last. That is a
+ * decoder thrashing, and it is felt as the whole page stuttering rather than
+ * as the background being coarse.
+ *
+ * At 120 it is roughly eight a second, which the decoder can actually retire.
+ * The picture during a fling is a little steppier for it — that is the trade,
+ * and it is the right way round: the scrub is only ever *watched* once the
+ * scrolling slows, and by then the gap has closed enough that the chase is
+ * playing the clip rather than seeking it. See `SEEK_AHEAD_SECONDS`.
  */
-const NATIVE_SEEK_INTERVAL_MS = 64;
+const NATIVE_SEEK_INTERVAL_MS = 120;
 
 /** Give up polling for the clip's `duration` after this many idle ticks (~4s at 60fps). */
 const MAX_WAIT_TICKS = 240;
 
+/**
+ * Android renders a `VideoView` into a `SurfaceView` by default, and a
+ * `SurfaceView` is not part of the view hierarchy's drawing at all — it is a
+ * separate compositor layer punched in behind the window. Nothing drawn in the
+ * tree can be composited *with* it, which takes out both of the things this
+ * clip is: a layer faded up by an `Animated` opacity, and a layer blended into
+ * the page with `screen`. The result on a phone was a background that never
+ * appeared. A `TextureView` draws like any other view, so the fade, the blend
+ * and the scrims over the top all behave the way they do on the web.
+ *
+ * The trade the docs name is power and performance, and it is the right one
+ * here: this is one muted, offscreen-composited clip that is the whole reason
+ * the page has a background.
+ */
+const SURFACE = Platform.OS === 'android' ? ('textureView' as const) : undefined;
+
+/**
+ * Whether scrubbing mode has to be taken off the player before it will play.
+ *
+ * On Android it does, and this is not a tuning knob — `scrubbingModeEnabled`
+ * *suppresses playback* there for as long as it is set. Pinned on, as it was,
+ * the chase below was writing `playbackRate` and calling `play()` into a player
+ * that had been told to ignore both, so the one mechanism this whole component
+ * moves the picture with was dead on the platform it was meant to help. The
+ * clip only ever advanced on the seeks, and on a phone that is a background
+ * that does nothing when the page is scrolled.
+ *
+ * So the flag now follows the decision the loop is already making every frame:
+ * on for a seek, which is the interaction it exists to optimise, and off the
+ * moment the clip is asked to play.
+ */
+const SCRUB_MODE_BLOCKS_PLAYBACK = Platform.OS === 'android';
+
 function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value));
+}
+
+/** How far in the crop is pushed on a viewport this wide. See `BRANCH_ZOOM_WIDE`. */
+function branchZoom(width: number): number {
+  const through = clamp01(
+    (width - BRANCH_ZOOM_COMPACT_WIDTH) / (BRANCH_ZOOM_WIDE_WIDTH - BRANCH_ZOOM_COMPACT_WIDTH),
+  );
+  return BRANCH_ZOOM_COMPACT + (BRANCH_ZOOM_WIDE - BRANCH_ZOOM_COMPACT) * through;
 }
 
 function asVideoElement(candidate: unknown): HTMLVideoElement | null {
@@ -178,13 +310,44 @@ export const LilyBloomAnimation = forwardRef<LilyBloomAnimationHandle, LilyBloom
 
     const viewRef = useRef<VideoView>(null);
 
+    /* The crop that picks one branch out of the wide shot. Held against the
+       window rather than the layer's own box: this is a full-bleed background,
+       and measuring it would cost a layout pass to learn what the window
+       already knows. See `BRANCH_ZOOM_WIDE`. */
+    const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+    const framing = useMemo(() => {
+      const zoom = branchZoom(screenWidth);
+      /* The layer can only be slid as far as the scale has grown it. Past that
+         the edge it was slid away from comes off the screen and the flat field
+         behind shows through as a band down the side — which never happened at
+         a zoom of 2.15 and happens immediately at the one a phone now gets. */
+      const roomX = (screenWidth * (zoom - 1)) / 2;
+      const roomY = (screenHeight * (zoom - 1)) / 2;
+      // A pixel short of the limit, so rounding on the way to the compositor
+      // cannot leave a hairline of the field showing along the edge.
+      const hold = (shift: number, room: number) => {
+        const limit = Math.max(0, room - 1);
+        return Math.min(limit, Math.max(-limit, shift));
+      };
+
+      return {
+        transform: [
+          { translateX: hold(BRANCH_SHIFT.x * screenWidth, roomX) },
+          { translateY: hold(BRANCH_SHIFT.y * screenHeight, roomY) },
+          { scale: zoom },
+        ],
+      };
+    }, [screenWidth, screenHeight]);
+
     const player = useVideoPlayer(LILY, (instance) => {
       instance.muted = true;
       if (scrubbing) {
-        // Both of these are no-ops on web (expo-video keeps them as dummies to
-        // match the native interface) — the web path is paced off the `seeked`
-        // event instead. On native they are what keeps a scrub seek cheap.
-        instance.scrubbingModeOptions = { scrubbingModeEnabled: true };
+        // A no-op on web (expo-video keeps it as a dummy to match the native
+        // interface) — the web path is paced off the `seeked` event instead.
+        // On native it is what keeps a scrub seek cheap. Scrubbing mode itself
+        // is *not* set here: it is turned on and off around each seek, because
+        // on Android leaving it on stops the clip playing at all. See
+        // `SCRUB_MODE_BLOCKS_PLAYBACK`.
         instance.seekTolerance = { toleranceBefore: 1 / 12, toleranceAfter: 1 / 12 };
       } else {
         instance.loop = true;
@@ -286,6 +449,17 @@ export const LilyBloomAnimation = forwardRef<LilyBloomAnimationHandle, LilyBloom
     /** Whether the clip has been asked to play, so play/pause is only written on a change. */
     const playingRef = useRef(false);
     const rateRef = useRef(1);
+    /** Whether the player is currently in scrubbing mode. See `setScrubbing`. */
+    const scrubModeRef = useRef(false);
+    /**
+     * The last positive `duration` the player reported.
+     *
+     * Android publishes it once the source is prepared and can report 0 again
+     * across a track change or a surface swap; without a latch, one such frame
+     * would send the loop back to the "nothing is known yet" branch and stall
+     * the picture mid-scroll for no reason. A clip's length does not change.
+     */
+    const durationRef = useRef(0);
 
     const stopLoop = useCallback(() => {
       if (rafRef.current !== null) {
@@ -293,6 +467,25 @@ export const LilyBloomAnimation = forwardRef<LilyBloomAnimationHandle, LilyBloom
         rafRef.current = null;
       }
     }, []);
+
+    /**
+     * Scrubbing mode, held only for as long as there is scrubbing to do.
+     *
+     * The platforms want opposite things from it and both are served by tying
+     * it to the seek: Android needs it *off* before it will play at all, and
+     * both want it *on* for a burst of seeks. Written only on a change, since
+     * it reconfigures the decoder.
+     */
+    const setScrubbing = useCallback(
+      (next: boolean) => {
+        if (scrubModeRef.current === next) {
+          return;
+        }
+        scrubModeRef.current = next;
+        player.scrubbingModeOptions = { scrubbingModeEnabled: next };
+      },
+      [player],
+    );
 
     /** Play/pause is a state change on the element, so only write real changes. */
     const setPlayback = useCallback(
@@ -302,12 +495,17 @@ export const LilyBloomAnimation = forwardRef<LilyBloomAnimationHandle, LilyBloom
         }
         playingRef.current = next;
         if (next) {
+          // Order matters on Android: playback is suppressed for as long as
+          // scrubbing mode is set, so it has to come off before the `play`.
+          if (SCRUB_MODE_BLOCKS_PLAYBACK) {
+            setScrubbing(false);
+          }
           player.play();
         } else {
           player.pause();
         }
       },
-      [player],
+      [player, setScrubbing],
     );
 
     const tickRef = useRef<(now: number) => void>(() => {});
@@ -385,8 +583,21 @@ export const LilyBloomAnimation = forwardRef<LilyBloomAnimationHandle, LilyBloom
           targetRef.current = clamp01(sampled / rangeRef.current);
         }
 
-        // Nothing can be aimed at until the clip's length is known.
-        const duration = player.duration;
+        /* Nothing can be aimed at until the clip's length is known — and once
+           it is, this stops asking. Every read here is a synchronous hop into
+           the player, made on the same thread the scroll is being read on,
+           sixty times a second for the whole of every scroll; a clip's length
+           does not change, so all but the first of those were spent
+           re-learning the one number this loop already had written down. The
+           latch was already here for Android's zeroes — see `durationRef` —
+           which is exactly what makes skipping the read safe. */
+        if (durationRef.current <= 0) {
+          const reported = player.duration;
+          if (reported > 0) {
+            durationRef.current = reported;
+          }
+        }
+        const duration = durationRef.current;
         if (duration <= 0) {
           waitTicksRef.current += 1;
           if (waitTicksRef.current > MAX_WAIT_TICKS) {
@@ -425,6 +636,10 @@ export const LilyBloomAnimation = forwardRef<LilyBloomAnimationHandle, LilyBloom
 
         if (mustSeek) {
           setPlayback(false);
+          // The interaction scrubbing mode exists for. Held for the run of
+          // seeks rather than struck around each one, so the decoder is not
+          // reconfigured twice a frame during a fling.
+          setScrubbing(true);
 
           // Web — exactly one seek in flight, aimed wherever the page has got to
           // by the moment the previous one retires. Writing `currentTime` again
@@ -447,6 +662,7 @@ export const LilyBloomAnimation = forwardRef<LilyBloomAnimationHandle, LilyBloom
           }
         } else if (gap > PLAY_ABOVE_SECONDS || (playingRef.current && gap > PAUSE_BELOW_SECONDS)) {
           /* — the ordinary case: pick a speed and let the element move — */
+          setScrubbing(false);
           const rate = Math.min(MAX_RATE, Math.max(MIN_RATE, gap / CHASE_SECONDS));
           if (Math.abs(rate - rateRef.current) > RATE_EPSILON) {
             player.playbackRate = rate;
@@ -455,6 +671,12 @@ export const LilyBloomAnimation = forwardRef<LilyBloomAnimationHandle, LilyBloom
           setPlayback(true);
         } else {
           setPlayback(false);
+          // Parked. Coming off scrubbing mode here means the next chase can
+          // start playing on its own first frame rather than spending one
+          // reconfiguring the decoder — and on Android it is also what stops a
+          // clip that happens to settle after a seek from being left in the one
+          // state it cannot play out of.
+          setScrubbing(false);
         }
 
         // Park when there is nothing this loop would do with another frame:
@@ -472,7 +694,7 @@ export const LilyBloomAnimation = forwardRef<LilyBloomAnimationHandle, LilyBloom
 
         rafRef.current = requestAnimationFrame((next) => tickRef.current(next));
       },
-      [player, reducedMotion, bindElement, stopLoop, setPlayback],
+      [player, reducedMotion, bindElement, stopLoop, setPlayback, setScrubbing],
     );
 
     // The rAF callback reaches `tick` through this ref so that a re-created
@@ -492,7 +714,18 @@ export const LilyBloomAnimation = forwardRef<LilyBloomAnimationHandle, LilyBloom
           lastOffsetRef.current = offsetY;
           // Absolute position within the scrollable range — never a per-event
           // delta. This is what makes a wheel notch and a touchpad glide agree.
-          targetRef.current = clamp01(offsetY / rangeRef.current);
+          const next = clamp01(offsetY / rangeRef.current);
+          /* A parked loop is not woken to re-learn a number it already has.
+             Through the whole of the carousel's span the fold hands this the
+             same offset on every scroll event — see `scrubOffset` — and every
+             wake was one tick whose first act is reading the player's clock,
+             a synchronous hop into native made on the busiest frames the page
+             has. A running loop still takes every update; parked, only a
+             target that actually moved is worth a frame. */
+          if (rafRef.current === null && next === targetRef.current) {
+            return;
+          }
+          targetRef.current = next;
           kick();
         },
       }),
@@ -527,28 +760,57 @@ export const LilyBloomAnimation = forwardRef<LilyBloomAnimationHandle, LilyBloom
 
     return (
       <View pointerEvents="none" style={[styles.root, style]}>
-        <View style={[StyleSheet.absoluteFill, styles.field]} />
+        {/* ——— the blend, paid for only when it changes ———
+            `screen` forces everything up to the nearest isolation boundary
+            through an offscreen buffer every time it is drawn — and it is
+            drawn every time *anything on the page* moves, because the window
+            redraws as one: a petal drifting past the scroller was enough to
+            re-run a full-screen blend for a clip that was parked. So the
+            boundary and the blend live together on this group, and on Android
+            the group is rendered to its own hardware texture: the offscreen
+            pass now re-runs only when something inside it changes — a decoded
+            frame, the reveal fade, the night dim — and an idle page composites
+            one cached texture instead. The scrims above are outside it, on a
+            cached texture of their own, for the same reason. */}
+        <View
+          renderToHardwareTextureAndroid
+          style={[StyleSheet.absoluteFill, styles.blendGroup]}>
+          <View style={[StyleSheet.absoluteFill, styles.field]} />
 
-        {/* Under the clip, not over it — `screen` blending adds light, so what
-            sits behind decides whether the bloom glows or washes out. */}
-        <Animated.View style={[StyleSheet.absoluteFill, styles.night, { opacity: night }]} />
+          {/* Under the clip, not over it — `screen` blending adds light, so
+              what sits behind decides whether the bloom glows or washes out. */}
+          <Animated.View style={[StyleSheet.absoluteFill, styles.night, { opacity: night }]} />
 
-        <Animated.View style={[styles.videoLayer, { opacity: fade }]}>
-          <VideoView
-            ref={viewRef}
-            player={player}
-            style={styles.video}
-            contentFit="cover"
-            nativeControls={false}
-            allowsPictureInPicture={false}
-            playsInline
-            onFirstFrameRender={revealVideo}
-          />
-        </Animated.View>
+          <Animated.View style={[styles.videoLayer, { opacity: fade }]}>
+            <VideoView
+              ref={viewRef}
+              player={player}
+              style={[styles.video, framing]}
+              contentFit="cover"
+              nativeControls={false}
+              allowsPictureInPicture={false}
+              playsInline
+              // Android only, and load-bearing there — see `SURFACE`.
+              surfaceType={SURFACE}
+              // No shutter over the first frame; the layer is faded up by hand.
+              useExoShutter={false}
+              onFirstFrameRender={revealVideo}
+            />
+          </Animated.View>
+        </View>
 
         {/* The daylight wash. Pulled back at night, or its pink would sit on top
             of the dark field and undo it. */}
         <Animated.View
+          /* Three full-screen ramps, none of which ever changes — and all three
+             sitting directly over a video that invalidates the layer beneath
+             them on every frame it decodes. Left to itself Android re-draws all
+             three gradients across the whole screen at the clip's frame rate,
+             for a picture that is identical every time. Cached once as a
+             texture it is composited instead, and the one thing about it that
+             does move — the night fade — is an alpha on that texture, which is
+             exactly what a hardware layer is for. */
+          renderToHardwareTextureAndroid
           style={[
             StyleSheet.absoluteFill,
             { opacity: night.interpolate({ inputRange: [0, 1], outputRange: [1, 0.12] }) },
@@ -566,8 +828,13 @@ const styles = StyleSheet.create({
   root: {
     ...StyleSheet.absoluteFill,
     overflow: 'hidden',
-    isolation: 'isolate',
     zIndex: 0,
+  },
+  /** The isolation boundary rides with the blend so the offscreen pass covers
+   *  exactly the layers `screen` composites against — the field and the night
+   *  — and can be cached as one piece. See the render block. */
+  blendGroup: {
+    isolation: 'isolate',
   },
   field: {
     ...GradientStyles.field,
